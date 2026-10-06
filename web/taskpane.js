@@ -166,11 +166,12 @@ function insertPicture(base64, { left, top, width, height }) {
   });
 }
 
-async function invertSelectedImage() {
+// The selected picture, rendered at RENDER_SCALE: its id, name, frame and PNG.
+async function selectedPicture(action) {
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.10")) {
-    throw new Error("Inverting needs PowerPointApi 1.10 (PowerPoint for Mac 16.105 or newer).");
+    throw new Error(`${action} needs PowerPointApi 1.10 (PowerPoint for Mac 16.105 or newer).`);
   }
-  const original = await PowerPoint.run(async (ctx) => {
+  return PowerPoint.run(async (ctx) => {
     const selected = ctx.presentation.getSelectedShapes();
     selected.load("items/id,items/type,items/name,items/left,items/top,items/width,items/height");
     await ctx.sync();
@@ -181,10 +182,12 @@ async function invertSelectedImage() {
     const { id, name, left, top, width, height } = shape;
     return { id, name, left, top, width, height, png: png.value };
   });
+}
 
+// Puts `base64` at `frame` on the current slide and deletes the original picture.
+async function replacePicture(original, base64, frame, name) {
   // Insert first, delete after: if the insert fails, the original picture is still there.
-  await insertPicture(await invertPng(original.png), original);
-
+  await insertPicture(base64, frame);
   await PowerPoint.run(async (ctx) => {
     const shapes = ctx.presentation.getSelectedSlides().getItemAt(0).shapes;
     const old = shapes.getItemOrNullObject(original.id);
@@ -192,15 +195,45 @@ async function invertSelectedImage() {
     if (!old.isNullObject) old.delete();
     shapes.load("items/name");
     await ctx.sync();
-    shapes.items[shapes.items.length - 1].name = `${original.name} (inverted)`;
+    shapes.items[shapes.items.length - 1].name = name;
     await ctx.sync();
   });
+}
+
+async function invertSelectedImage() {
+  const original = await selectedPicture("Inverting");
+  await replacePicture(original, await invertPng(original.png), original, `${original.name} (inverted)`);
   status(`Inverted "${original.name}".`);
 }
 
+// ✂️ BiRefNet runs next to the pane, in server.js — a few GB of torch can't live in a browser.
+function prewarmBackgroundRemoval() {
+  fetch("/bg-remove/prewarm", { method: "POST" }).catch(() => {});
+}
+
+async function removeBackground() {
+  const original = await selectedPicture("Removing the background");
+  status("Removing the background… (the first one loads the model, ~10 s)");
+  const bytes = Uint8Array.from(atob(original.png), (c) => c.charCodeAt(0));
+  const res = await fetch("/bg-remove", { method: "POST", headers: { "Content-Type": "image/png" }, body: bytes });
+  const out = await res.json();
+  if (!res.ok) throw new Error(out.error || `Background removal failed (${res.status}).`);
+  // The cut-out comes back trimmed to the subject: put it exactly where the subject was.
+  const [x0, y0, x1, y1] = out.box, [w, h] = out.size;
+  const sx = original.width / w, sy = original.height / h;
+  const frame = { left: original.left + x0 * sx, top: original.top + y0 * sy,
+    width: (x1 - x0) * sx, height: (y1 - y0) * sy };
+  await replacePicture(original, out.png, frame, `${original.name} (no bg)`);
+  status(`Removed the background of "${original.name}" (${(out.ms / 1000).toFixed(1)} s).`);
+}
+
+// Disables the clicked button while `fn` runs: a second click would replace the same picture twice.
 function guarded(fn) {
-  return async () => {
+  return async (event) => {
+    const button = event && event.currentTarget;
+    if (button) button.disabled = true;
     try { await fn(); } catch (e) { status(e.message || String(e), true); console.error(e); }
+    finally { if (button) button.disabled = false; }
   };
 }
 
@@ -210,11 +243,13 @@ Office.onReady(() => {
       document.querySelectorAll(".tab, .panel").forEach((el) => el.classList.remove("active"));
       tab.classList.add("active");
       $(tab.dataset.tab).classList.add("active");
+      if (tab.dataset.tab === "image") prewarmBackgroundRemoval();
     };
   });
   $("insert").onclick = guarded(insertCode);
   $("scan").onclick = guarded(scanDeck);
   $("invert").onclick = guarded(invertSelectedImage);
+  $("remove-bg").onclick = guarded(removeBackground);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
     status("This PowerPoint is too old for the add-in (needs PowerPointApi 1.5).", true);
   }

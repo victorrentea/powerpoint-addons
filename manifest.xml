@@ -9,7 +9,7 @@
   <ProviderName>Victor Rentea</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Victor Tools"/>
-  <Description DefaultValue="Syntax-highlighted code blocks and text-heavy slide finder."/>
+  <Description DefaultValue="Syntax-highlighted code blocks, picture invert and background removal, text-heavy slide finder."/>
   <IconUrl DefaultValue="https://localhost:44344/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:44344/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://localhost:44344/taskpane.html"/>
@@ -72,7 +72,7 @@
         <bt:String id="VictorTools.ButtonLabel" DefaultValue="Victor Tools"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="VictorTools.ButtonTip" DefaultValue="Insert syntax-highlighted code, find text-heavy slides."/>
+        <bt:String id="VictorTools.ButtonTip" DefaultValue="Insert syntax-highlighted code, invert or cut out pictures, find text-heavy slides."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
