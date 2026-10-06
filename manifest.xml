@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>8eeda3fa-1a86-4d27-b218-48e137aba64c</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Victor Rentea</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Victor Tools"/>
+  <Description DefaultValue="Syntax-highlighted code blocks and text-heavy slide finder."/>
+  <IconUrl DefaultValue="https://localhost:44344/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:44344/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://localhost:44344/taskpane.html"/>
+  <AppDomains>
+    <AppDomain>https://localhost:44344</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Presentation"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:44344/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Presentation">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="VictorTools.Group">
+                <Label resid="VictorTools.GroupLabel"/>
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16"/>
+                  <bt:Image size="32" resid="Icon.32"/>
+                  <bt:Image size="80" resid="Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="VictorTools.Open">
+                  <Label resid="VictorTools.ButtonLabel"/>
+                  <Supertip>
+                    <Title resid="VictorTools.ButtonLabel"/>
+                    <Description resid="VictorTools.ButtonTip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16"/>
+                    <bt:Image size="32" resid="Icon.32"/>
+                    <bt:Image size="80" resid="Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>VictorTools</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://localhost:44344/assets/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://localhost:44344/assets/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://localhost:44344/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:44344/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="VictorTools.GroupLabel" DefaultValue="Victor"/>
+        <bt:String id="VictorTools.ButtonLabel" DefaultValue="Victor Tools"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="VictorTools.ButtonTip" DefaultValue="Insert syntax-highlighted code, find text-heavy slides."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
