@@ -14,6 +14,7 @@ const tls = {
 };
 
 https.createServer(tls, (req, res) => {
+  console.log(new Date().toISOString(), req.method, req.url, req.headers["user-agent"] || "");
   const urlPath = decodeURIComponent(new URL(req.url, "https://localhost").pathname);
   const file = path.join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
