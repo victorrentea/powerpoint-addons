@@ -6,12 +6,15 @@
   <title>Victor Tools</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="vendor/highlight.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="regroup.js"></script>
   <link rel="stylesheet" href="taskpane.css">
 </head>
 <body>
   <nav>
     <button class="tab active" data-tab="code">Code block</button>
     <button class="tab" data-tab="image">Image</button>
+    <button class="tab" data-tab="group">Group</button>
     <button class="tab" data-tab="stats">Text-heavy slides</button>
   </nav>
 
@@ -20,6 +23,11 @@
     <button id="invert" class="primary">Invert selected image</button>
     <p class="hint">Or cut its background away (BiRefNet, on this Mac's GPU). The result is trimmed to the subject and stays where the subject was.</p>
     <button id="remove-bg" class="primary">Remove background</button>
+  </section>
+
+  <section id="group" class="panel">
+    <p class="hint">Select an animated group plus the shapes to add to it. They join the group, which keeps its animation and its place in the order. The slide is rebuilt in place.</p>
+    <button id="add-to-group" class="primary">Add to animated group</button>
   </section>
 
   <section id="code" class="panel active">

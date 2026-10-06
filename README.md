@@ -4,6 +4,7 @@ PowerPoint (Mac) task-pane add-in "Victor Tools", button on the Home tab:
 - **Code block** — paste code, pick language/theme/size → syntax-highlighted JetBrains Mono text box (VS Code Dark+/Light+ colors).
 - **Image** — select a picture → "Invert selected image" replaces it with its negative (black ↔ white, alpha kept). Needs PowerPointApi 1.10 (Mac 16.105+).
 - **Image → Remove background** — cuts the subject out of the selected picture with BiRefNet on the Mac's GPU, trimmed to the subject and placed where the subject was. Moved here from Victor Addons' ⌘⇧V bezel (2026-10-06): PowerPoint is the only place it's needed.
+- **Group → Add to animated group** — select an animated group plus the shapes to add: they join the group, which keeps its id, so its animation and its place in the build order stay. Office.js has no animation API and ungroup + group makes a new id the animation doesn't know, so the pane exports the slide (`exportAsBase64`, PowerPointApi 1.8), `web/regroup.js` moves the shapes inside the `<p:grpSp>` in the XML (into the group's own scaled coordinate space), and the rebuilt slide replaces the original (`insertSlidesFromBase64` after it, then delete). The added shapes lose their own effects (PowerPoint animates only top-level shapes); placeholders, tables and rotated groups are refused. Tests: `npm test`.
 - **Text-heavy slides** — ranks slides by word count; click to jump.
 
 ## How it's wired

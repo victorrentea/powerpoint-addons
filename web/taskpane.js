@@ -227,6 +227,82 @@ async function removeBackground() {
   status(`Removed the background of "${original.name}" (${(out.ms / 1000).toFixed(1)} s).`);
 }
 
+// 🧩 Prefix of the temporary names that find the selected shapes again in the exported slide.
+const MARK = "\u2063victor-tools-regroup-";
+
+// The selected shapes, each one replaced by its top-level group when it was clicked inside one.
+async function selectedTopLevelShapes(ctx) {
+  const selected = ctx.presentation.getSelectedShapes();
+  selected.load("items/id,items/name,items/level");
+  await ctx.sync();
+  let shapes = selected.items;
+  while (shapes.some((s) => s.level > 0)) {
+    shapes = shapes.map((s) => (s.level > 0 ? s.parentGroup : s));
+    shapes.forEach((s) => s.load("id,name,level"));
+    await ctx.sync();
+  }
+  return [...new Map(shapes.map((s) => [s.id, s])).values()];
+}
+
+// Exports the current slide with the selected shapes renamed to MARK markers (names restored at once).
+async function exportSlideWithMarks() {
+  return PowerPoint.run(async (ctx) => {
+    const slide = ctx.presentation.getSelectedSlides().getItemAt(0);
+    slide.load("id");
+    const shapes = await selectedTopLevelShapes(ctx);
+    if (shapes.length < 2) throw new Error("Select the animated group and the shapes to add to it.");
+    const marks = new Map(shapes.map((s, i) => [`${MARK}${i}`, s.name]));
+    shapes.forEach((s, i) => { s.name = `${MARK}${i}`; });
+    await ctx.sync();
+    try {
+      const pptx = slide.exportAsBase64();
+      await ctx.sync();
+      return { slideId: slide.id, marks, pptx: pptx.value };
+    } finally {
+      shapes.forEach((s, i) => { s.name = marks.get(`${MARK}${i}`); });
+      await ctx.sync();
+    }
+  });
+}
+
+async function addToAnimatedGroup() {
+  if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.8")) {
+    throw new Error("Needs PowerPointApi 1.8 (PowerPoint for Mac 16.96 or newer).");
+  }
+  const { slideId, marks, pptx } = await exportSlideWithMarks();
+  const zip = await JSZip.loadAsync(pptx, { base64: true });
+  const slides = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
+  if (slides.length !== 1) throw new Error(`The exported slide came back as ${slides.length} slides.`);
+  const doc = new DOMParser().parseFromString(await zip.file(slides[0]).async("string"), "application/xml");
+  const result = Regroup.addToGroup(doc, marks);
+  const xml = new XMLSerializer().serializeToString(doc);
+  zip.file(slides[0], xml.startsWith("<?xml") ? xml : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xml}`);
+  const rebuilt = await zip.generateAsync({ type: "base64", compression: "DEFLATE" });
+
+  // Insert the rebuilt slide right after the original, then drop the original.
+  await PowerPoint.run(async (ctx) => {
+    const all = ctx.presentation.slides;
+    all.load("items/id");
+    await ctx.sync();
+    const before = new Set(all.items.map((s) => s.id));
+    ctx.presentation.insertSlidesFromBase64(rebuilt, {
+      formatting: PowerPoint.InsertSlideFormatting.useDestinationTheme, targetSlideId: slideId,
+    });
+    await ctx.sync();
+    all.load("items/id");
+    await ctx.sync();
+    const inserted = all.items.find((s) => !before.has(s.id));
+    if (!inserted) throw new Error("PowerPoint didn't insert the rebuilt slide; the original is untouched.");
+    ctx.presentation.slides.getItem(slideId).delete();
+    await ctx.sync();
+    ctx.presentation.setSelectedSlides([inserted.id]);
+    await ctx.sync();
+  });
+  const dropped = result.droppedAnimations ? ` Dropped ${result.droppedAnimations} effect(s) of the added shapes.` : "";
+  const kept = result.animated ? "keeps its animation" : "had no animation";
+  status(`Added ${result.added.map((n) => `"${n}"`).join(", ")} to "${result.group}", which ${kept}.${dropped}`);
+}
+
 // Disables the clicked button while `fn` runs: a second click would replace the same picture twice.
 function guarded(fn) {
   return async (event) => {
@@ -250,6 +326,7 @@ Office.onReady(() => {
   $("scan").onclick = guarded(scanDeck);
   $("invert").onclick = guarded(invertSelectedImage);
   $("remove-bg").onclick = guarded(removeBackground);
+  $("add-to-group").onclick = guarded(addToAnimatedGroup);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
     status("This PowerPoint is too old for the add-in (needs PowerPointApi 1.5).", true);
   }
