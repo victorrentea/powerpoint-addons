@@ -11,8 +11,14 @@
 <body>
   <nav>
     <button class="tab active" data-tab="code">Code block</button>
+    <button class="tab" data-tab="image">Image</button>
     <button class="tab" data-tab="stats">Text-heavy slides</button>
   </nav>
+
+  <section id="image" class="panel">
+    <p class="hint">Select a picture on the slide. It gets replaced by its negative: black ↔ white, every color flipped, transparency kept.</p>
+    <button id="invert" class="primary">Invert selected image</button>
+  </section>
 
   <section id="code" class="panel active">
     <label>Language

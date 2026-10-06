@@ -124,6 +124,80 @@ async function scanDeck() {
   status(`Scanned ${ranking.length} slides.`);
 }
 
+// Pixels per point when rendering the picture, so the negative keeps detail when the slide is projected.
+const RENDER_SCALE = 3;
+
+// Flips R, G and B of an RGBA buffer in place; alpha stays, so transparent areas remain transparent.
+function invertPixels(rgba) {
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = 255 - rgba[i];
+    rgba[i + 1] = 255 - rgba[i + 1];
+    rgba[i + 2] = 255 - rgba[i + 2];
+  }
+  return rgba;
+}
+
+function invertPng(base64) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const g = canvas.getContext("2d");
+      g.drawImage(img, 0, 0);
+      const pixels = g.getImageData(0, 0, canvas.width, canvas.height);
+      invertPixels(pixels.data);
+      g.putImageData(pixels, 0, 0);
+      resolve(canvas.toDataURL("image/png").split(",")[1]);
+    };
+    img.onerror = () => reject(new Error("PowerPoint returned an image the pane can't decode."));
+    img.src = `data:image/png;base64,${base64}`;
+  });
+}
+
+// ShapeCollection.addPicture is still preview-only, so pictures go in through the Common API.
+function insertPicture(base64, { left, top, width, height }) {
+  return new Promise((resolve, reject) => {
+    Office.context.document.setSelectedDataAsync(base64, {
+      coercionType: Office.CoercionType.Image,
+      imageLeft: left, imageTop: top, imageWidth: width, imageHeight: height,
+    }, (r) => (r.status === Office.AsyncResultStatus.Failed ? reject(new Error(r.error.message)) : resolve()));
+  });
+}
+
+async function invertSelectedImage() {
+  if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.10")) {
+    throw new Error("Inverting needs PowerPointApi 1.10 (PowerPoint for Mac 16.105 or newer).");
+  }
+  const original = await PowerPoint.run(async (ctx) => {
+    const selected = ctx.presentation.getSelectedShapes();
+    selected.load("items/id,items/type,items/name,items/left,items/top,items/width,items/height");
+    await ctx.sync();
+    const shape = selected.items.find((s) => s.type === PowerPoint.ShapeType.image);
+    if (!shape) throw new Error("Select a picture on the slide first.");
+    const png = shape.getImageAsBase64({ width: Math.round(shape.width * RENDER_SCALE) });
+    await ctx.sync();
+    const { id, name, left, top, width, height } = shape;
+    return { id, name, left, top, width, height, png: png.value };
+  });
+
+  // Insert first, delete after: if the insert fails, the original picture is still there.
+  await insertPicture(await invertPng(original.png), original);
+
+  await PowerPoint.run(async (ctx) => {
+    const shapes = ctx.presentation.getSelectedSlides().getItemAt(0).shapes;
+    const old = shapes.getItemOrNullObject(original.id);
+    await ctx.sync();
+    if (!old.isNullObject) old.delete();
+    shapes.load("items/name");
+    await ctx.sync();
+    shapes.items[shapes.items.length - 1].name = `${original.name} (inverted)`;
+    await ctx.sync();
+  });
+  status(`Inverted "${original.name}".`);
+}
+
 function guarded(fn) {
   return async () => {
     try { await fn(); } catch (e) { status(e.message || String(e), true); console.error(e); }
@@ -140,6 +214,7 @@ Office.onReady(() => {
   });
   $("insert").onclick = guarded(insertCode);
   $("scan").onclick = guarded(scanDeck);
+  $("invert").onclick = guarded(invertSelectedImage);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
     status("This PowerPoint is too old for the add-in (needs PowerPointApi 1.5).", true);
   }

@@ -2,6 +2,7 @@
 
 PowerPoint (Mac) task-pane add-in "Victor Tools", button on the Home tab:
 - **Code block** — paste code, pick language/theme/size → syntax-highlighted JetBrains Mono text box (VS Code Dark+/Light+ colors).
+- **Image** — select a picture → "Invert selected image" replaces it with its negative (black ↔ white, alpha kept). Needs PowerPointApi 1.10 (Mac 16.105+).
 - **Text-heavy slides** — ranks slides by word count; click to jump.
 
 ## How it's wired
