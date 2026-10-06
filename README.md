@@ -12,5 +12,6 @@ PowerPoint (Mac) task-pane add-in "Victor Tools", button on the Home tab:
 - Requires PowerPointApi 1.5.
 
 ## Run
-    node server.js
-Must be running whenever PowerPoint opens the pane.
+Installed as LaunchAgent `ro.victorrentea.ppt-addin` (source: `launchagent.plist`), starts at login, log in `/tmp/ppt-addin.log`.
+Restart after editing `server.js`: `launchctl kickstart -k gui/$(id -u)/ro.victorrentea.ppt-addin`.
+Edits under `web/` need no restart (served with `no-store`), just reopen the pane.
