@@ -24,4 +24,4 @@ https.createServer(tls, (req, res) => {
       "Cache-Control": "no-store" });
     res.end(data);
   });
-}).listen(PORT, "127.0.0.1", () => console.log(`victor-ppt-addin on https://localhost:${PORT}`));
+}).listen(PORT, "127.0.0.1", () => console.log(`powerpoint-addons on https://localhost:${PORT}`));

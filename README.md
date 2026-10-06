@@ -1,4 +1,4 @@
-# victor-ppt-addin
+# powerpoint-addons
 
 PowerPoint (Mac) task-pane add-in "Victor Tools", button on the Home tab:
 - **Code block** — paste code, pick language/theme/size → syntax-highlighted JetBrains Mono text box (VS Code Dark+/Light+ colors).
@@ -12,6 +12,6 @@ PowerPoint (Mac) task-pane add-in "Victor Tools", button on the Home tab:
 - Requires PowerPointApi 1.5.
 
 ## Run
-Installed as LaunchAgent `ro.victorrentea.ppt-addin` (source: `launchagent.plist`), starts at login, log in `/tmp/ppt-addin.log`.
-Restart after editing `server.js`: `launchctl kickstart -k gui/$(id -u)/ro.victorrentea.ppt-addin`.
+Installed as LaunchAgent `ro.victorrentea.powerpoint-addons` (source: `launchagent.plist`), starts at login, log in `/tmp/powerpoint-addons.log`.
+Restart after editing `server.js`: `launchctl kickstart -k gui/$(id -u)/ro.victorrentea.powerpoint-addons`.
 Edits under `web/` need no restart (served with `no-store`), just reopen the pane.

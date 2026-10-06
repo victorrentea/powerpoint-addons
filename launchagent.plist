@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>ro.victorrentea.ppt-addin</string>
+  <key>Label</key><string>ro.victorrentea.powerpoint-addons</string>
   <key>ProgramArguments</key><array>
     <string>/Users/victorrentea/.nvm/versions/node/v22.21.1/bin/node</string>
-    <string>/Users/victorrentea/workspace/victor-ppt-addin/server.js</string>
+    <string>/Users/victorrentea/workspace/powerpoint-addons/server.js</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/ppt-addin.log</string>
-  <key>StandardErrorPath</key><string>/tmp/ppt-addin.log</string>
+  <key>StandardOutPath</key><string>/tmp/powerpoint-addons.log</string>
+  <key>StandardErrorPath</key><string>/tmp/powerpoint-addons.log</string>
 </dict></plist>
