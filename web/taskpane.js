@@ -314,14 +314,9 @@ function guarded(fn) {
 }
 
 Office.onReady(() => {
-  document.querySelectorAll(".tab").forEach((tab) => {
-    tab.onclick = () => {
-      document.querySelectorAll(".tab, .panel").forEach((el) => el.classList.remove("active"));
-      tab.classList.add("active");
-      $(tab.dataset.tab).classList.add("active");
-      if (tab.dataset.tab === "image") prewarmBackgroundRemoval();
-    };
-  });
+  // The server already keeps BiRefNet warm while PowerPoint runs; this only
+  // covers a pane opened in the 30 s before its watcher notices PowerPoint.
+  prewarmBackgroundRemoval();
   $("insert").onclick = guarded(insertCode);
   $("scan").onclick = guarded(scanDeck);
   $("invert").onclick = guarded(invertSelectedImage);

@@ -61,4 +61,6 @@ https.createServer(tls, (req, res) => {
   });
 }).listen(PORT, "127.0.0.1", () => console.log(`powerpoint-addons on https://localhost:${PORT}`));
 
+bgRemove.watchPowerPoint();
+
 for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => { bgRemove.stop(); process.exit(0); });

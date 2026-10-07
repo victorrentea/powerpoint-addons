@@ -11,43 +11,39 @@
   <link rel="stylesheet" href="taskpane.css">
 </head>
 <body>
-  <nav>
-    <button class="tab active" data-tab="code">Code block</button>
-    <button class="tab" data-tab="image">Image</button>
-    <button class="tab" data-tab="group">Group</button>
-    <button class="tab" data-tab="stats">Text-heavy slides</button>
-  </nav>
-
-  <section id="image" class="panel">
-    <p class="hint">Select a picture on the slide. It gets replaced by its negative: black ↔ white, every color flipped, transparency kept.</p>
-    <button id="invert" class="primary">Invert selected image</button>
-    <p class="hint">Or cut its background away (BiRefNet, on this Mac's GPU). The result is trimmed to the subject and stays where the subject was.</p>
-    <button id="remove-bg" class="primary">Remove background</button>
+  <!-- One pane, no tabs: every button in sight, nothing to hunt for. -->
+  <section>
+    <h2>Selected picture</h2>
+    <div class="row">
+      <button id="invert" class="primary" title="Replace the selected picture with its negative: black ↔ white, every color flipped, transparency kept.">Invert</button>
+      <button id="remove-bg" class="primary" title="Cut the background away (BiRefNet, on this Mac's GPU). The result is trimmed to the subject and stays where the subject was.">Remove background</button>
+    </div>
   </section>
 
-  <section id="group" class="panel">
-    <p class="hint">Select an animated group plus the shapes to add to it. They join the group, which keeps its animation and its place in the order. The slide is rebuilt in place.</p>
-    <button id="add-to-group" class="primary">Add to animated group</button>
+  <section>
+    <h2>Animated group</h2>
+    <button id="add-to-group" class="primary" title="Select an animated group plus the shapes to add to it. They join the group, which keeps its animation and its place in the order. The slide is rebuilt in place.">Add selection to animated group</button>
   </section>
 
-  <section id="code" class="panel active">
-    <label>Language
-      <select id="lang">
-        <option value="java">Java</option>
-        <option value="kotlin">Kotlin</option>
-        <option value="typescript">TypeScript</option>
-        <option value="javascript">JavaScript</option>
-        <option value="python">Python</option>
-        <option value="sql">SQL</option>
-        <option value="xml">XML / HTML</option>
-        <option value="yaml">YAML</option>
-        <option value="json">JSON</option>
-        <option value="bash">Bash</option>
-        <option value="plaintext">Plain text</option>
-      </select>
-    </label>
+  <section>
+    <h2>Code block</h2>
     <textarea id="src" spellcheck="false" placeholder="Paste code here…"></textarea>
     <div class="row">
+      <label>Language
+        <select id="lang">
+          <option value="java">Java</option>
+          <option value="kotlin">Kotlin</option>
+          <option value="typescript">TypeScript</option>
+          <option value="javascript">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="sql">SQL</option>
+          <option value="xml">XML / HTML</option>
+          <option value="yaml">YAML</option>
+          <option value="json">JSON</option>
+          <option value="bash">Bash</option>
+          <option value="plaintext">Plain text</option>
+        </select>
+      </label>
       <label>Size <input id="size" type="number" min="8" max="40" value="16"></label>
       <label>Theme
         <select id="theme">
@@ -59,9 +55,9 @@
     <button id="insert" class="primary">Insert on current slide</button>
   </section>
 
-  <section id="stats" class="panel">
-    <p class="hint">Slides ranked by word count. Click one to jump to it.</p>
-    <button id="scan" class="primary">Scan deck</button>
+  <section>
+    <h2>Text-heavy slides</h2>
+    <button id="scan" class="primary" title="Rank the slides by word count. Click one to jump to it.">Scan deck</button>
     <ol id="ranking"></ol>
   </section>
 
