@@ -265,22 +265,21 @@ async function exportSlideWithMarks() {
   });
 }
 
-async function addToAnimatedGroup() {
-  if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.8")) {
-    throw new Error("Needs PowerPointApi 1.8 (PowerPoint for Mac 16.96 or newer).");
-  }
-  const { slideId, marks, pptx } = await exportSlideWithMarks();
+// Runs `edit(doc)` on the slide XML inside an exported one-slide pptx; returns the rebuilt pptx.
+async function editSlideXml(pptx, edit) {
   const zip = await JSZip.loadAsync(pptx, { base64: true });
   const slides = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
   if (slides.length !== 1) throw new Error(`The exported slide came back as ${slides.length} slides.`);
   const doc = new DOMParser().parseFromString(await zip.file(slides[0]).async("string"), "application/xml");
-  const result = Regroup.addToGroup(doc, marks);
+  const result = edit(doc);
   const xml = new XMLSerializer().serializeToString(doc);
   zip.file(slides[0], xml.startsWith("<?xml") ? xml : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xml}`);
-  const rebuilt = await zip.generateAsync({ type: "base64", compression: "DEFLATE" });
+  return { result, rebuilt: await zip.generateAsync({ type: "base64", compression: "DEFLATE" }) };
+}
 
-  // Insert the rebuilt slide right after the original, then drop the original.
-  await PowerPoint.run(async (ctx) => {
+// Inserts the rebuilt slide right after the original, then drops the original; returns the new slide's id.
+async function replaceSlide(slideId, rebuilt) {
+  return PowerPoint.run(async (ctx) => {
     const all = ctx.presentation.slides;
     all.load("items/id");
     await ctx.sync();
@@ -295,12 +294,57 @@ async function addToAnimatedGroup() {
     if (!inserted) throw new Error("PowerPoint didn't insert the rebuilt slide; the original is untouched.");
     ctx.presentation.slides.getItem(slideId).delete();
     await ctx.sync();
-    ctx.presentation.setSelectedSlides([inserted.id]);
+    return inserted.id;
+  });
+}
+
+function selectSlides(ids) {
+  return PowerPoint.run(async (ctx) => {
+    ctx.presentation.setSelectedSlides(ids);
     await ctx.sync();
   });
+}
+
+function requireSlideExport() {
+  if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.8")) {
+    throw new Error("Needs PowerPointApi 1.8 (PowerPoint for Mac 16.96 or newer).");
+  }
+}
+
+async function addToAnimatedGroup() {
+  requireSlideExport();
+  const { slideId, marks, pptx } = await exportSlideWithMarks();
+  const { result, rebuilt } = await editSlideXml(pptx, (doc) => Regroup.addToGroup(doc, marks));
+  await selectSlides([await replaceSlide(slideId, rebuilt)]);
   const dropped = result.droppedAnimations ? ` Dropped ${result.droppedAnimations} effect(s) of the added shapes.` : "";
   const kept = result.animated ? "keeps its animation" : "had no animation";
   status(`Added ${result.added.map((n) => `"${n}"`).join(", ")} to "${result.group}", which ${kept}.${dropped}`);
+}
+
+// 🔗 Every link on the selected slides: text keeps its color and font, the underline turns blue.
+async function underlineLinksOnSelectedSlides() {
+  requireSlideExport();
+  const exported = await PowerPoint.run(async (ctx) => {
+    const selected = ctx.presentation.getSelectedSlides();
+    selected.load("items/id");
+    await ctx.sync();
+    const pptx = selected.items.map((s) => s.exportAsBase64());
+    await ctx.sync();
+    return selected.items.map((s, i) => ({ id: s.id, pptx: pptx[i].value }));
+  });
+  if (!exported.length) throw new Error("Select a slide first.");
+  const ids = [];
+  let links = 0, rebuiltSlides = 0;
+  for (const { id, pptx } of exported) {
+    const { result, rebuilt } = await editSlideXml(pptx, Links.underlineLinks);
+    if (!result) { ids.push(id); continue; }
+    ids.push(await replaceSlide(id, rebuilt));
+    links += result;
+    rebuiltSlides++;
+  }
+  await selectSlides(ids);
+  const where = exported.length === 1 ? "this slide" : `${exported.length} slides`;
+  status(links ? `Underlined ${links} link run(s) in blue on ${rebuiltSlides} of ${where}.` : `No links to restyle on ${where}.`);
 }
 
 // Disables the clicked button while `fn` runs: a second click would replace the same picture twice.
@@ -322,6 +366,7 @@ Office.onReady(() => {
   $("invert").onclick = guarded(invertSelectedImage);
   $("remove-bg").onclick = guarded(removeBackground);
   $("add-to-group").onclick = guarded(addToAnimatedGroup);
+  $("underline-links").onclick = guarded(underlineLinksOnSelectedSlides);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
     status("This PowerPoint is too old for the add-in (needs PowerPointApi 1.5).", true);
   }
