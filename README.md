@@ -9,6 +9,9 @@ PowerPoint (Mac) task-pane add-in "Victor Tools", button on the Home tab. One pa
 - **Links → Blue underline on links** — on the selected slides (select many in the thumbnails for a whole deck), every hyperlink keeps its own text color and font and only its underline turns blue. It writes what PowerPoint's own Font › Underline color writes on a link — `u="sng"`, `<a:uLnTx/>`, `<a:uFill>` in theme color `tx2`, and the 2018 `hlinkClr val="tx"` extension that stops the link from repainting the text in the theme's hyperlink color — copied from slides styled by hand. Office.js has neither, so it goes through the same export → edit XML (`web/links.js`) → reinsert path as the animated group; slides without changes aren't rebuilt.
 - **Text-heavy slides** — ranks slides by word count; click to jump.
 
+## Opening with the deck (📌 `pin-deck.py`)
+A sideloaded add-in gets no ribbon button of its own: it has to be opened from Home › Add-ins › Developer Add-ins, in every deck, every session — only add-ins deployed by a Microsoft 365 admin load everywhere by themselves. `./pin-deck.py DECK.pptx …` tags a deck so PowerPoint opens the pane with it from then on (`visibility="1"` on the add-in's pane in `ppt/webextensions/taskpanes.xml`, plus the parts if the deck has none). The Office.js way, `Office.AutoShowTaskpaneWithDocument` from the pane, writes `visibility="0"`, which PowerPoint for Mac 16.114 ignored (2026-11-03: same deck reopened, no pane; `visibility="1"` loaded it every time). The deck must be closed in PowerPoint; the original goes to `~/Library/Caches/powerpoint-addons/pinned-backups/` first. The manifest's `TaskpaneId` is `Office.AutoShowTaskpaneWithDocument`, which the tag points at.
+
 ## How it's wired
 - `web/` static task pane, served over HTTPS by `server.js` on `https://localhost:44344` (Office loads add-ins only over https).
 - `certs/` self-signed localhost cert (git-ignored), trusted in the login keychain for SSL.
