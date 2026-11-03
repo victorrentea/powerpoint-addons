@@ -208,14 +208,18 @@ async function invertSelectedImage() {
   status(`Inverted "${original.name}".`);
 }
 
-// 🧽 The neighborhood scales with the picture: a stock watermark's letters are ~1% of its width.
+// 🧽 Claude finds the watermark, LaMa paints it out — both next to the pane, in server.js.
 async function removeWatermarkFromSelectedImage() {
   const original = await selectedPicture("Removing the watermark");
-  const { png, result: changed } = await editPng(original.png,
-    (rgba, w, h) => Watermark.removeWatermark(rgba, w, h, Math.max(4, Math.round(w / 180))));
-  if (!changed) return status(`Found no watermark on "${original.name}".`);
-  await replacePicture(original, png, original, `${original.name} (no watermark)`);
-  status(`Removed the watermark of "${original.name}" (${changed} pixels repainted).`);
+  status("Looking for the watermark with Claude, then painting it out… (~20–40 s)");
+  const bytes = Uint8Array.from(atob(original.png), (c) => c.charCodeAt(0));
+  const res = await fetch("/watermark", { method: "POST", headers: { "Content-Type": "image/png" }, body: bytes });
+  const out = await res.json();
+  if (!res.ok) throw new Error(out.error || `Watermark removal failed (${res.status}).`);
+  if (!out.found[0]) return status(`Claude found no watermark on "${original.name}".`);
+  await replacePicture(original, out.png, original, `${original.name} (no watermark)`);
+  const second = out.found[1] ? `, ${out.found[1]} more on a second look` : "";
+  status(`Removed the watermark of "${original.name}": ${out.found[0]} mark(s)${second}, ${(out.ms / 1000).toFixed(0)} s.`);
 }
 
 // ✂️ BiRefNet runs next to the pane, in server.js — a few GB of torch can't live in a browser.

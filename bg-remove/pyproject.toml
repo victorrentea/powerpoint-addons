@@ -13,4 +13,5 @@ dependencies = [
     "einops==0.8.2",
     "pillow==12.3.0",
     "numpy==2.5.3",
+    "scipy==1.18.1",
 ]

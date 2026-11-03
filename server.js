@@ -1,9 +1,11 @@
 // Static HTTPS server for the add-in: Office only loads task panes over https.
-// Plus the ✂️ background removal the pane can't do in the browser (bg-remove.js).
+// Plus the ✂️ background removal (bg-remove.js) and 🧽 watermark removal (watermark.js)
+// the pane can't do in the browser.
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const bgRemove = require("./bg-remove");
+const watermark = require("./watermark");
 
 const PORT = 44344;
 const ROOT = path.join(__dirname, "web");
@@ -47,10 +49,23 @@ async function api(req, res, urlPath) {
   }
 }
 
+// POST /watermark  body: PNG bytes → { png: base64, found, ms }.
+async function watermarkApi(req, res) {
+  try {
+    const out = await watermark.removeWatermark(await readBody(req));
+    console.log(new Date().toISOString(), `🧽 watermark: ${out.found.join(" + ")} box(es) in ${out.ms} ms`);
+    json(res, 200, { png: out.png.toString("base64"), found: out.found, ms: out.ms });
+  } catch (e) {
+    console.error("🧽", e.message);
+    json(res, 500, { error: e.message });
+  }
+}
+
 https.createServer(tls, (req, res) => {
   console.log(new Date().toISOString(), req.method, req.url, req.headers["user-agent"] || "");
   const urlPath = decodeURIComponent(new URL(req.url, "https://localhost").pathname);
   if (req.method === "POST" && urlPath.startsWith("/bg-remove")) return api(req, res, urlPath);
+  if (req.method === "POST" && urlPath === "/watermark") return watermarkApi(req, res);
   const file = path.join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, data) => {
