@@ -121,23 +121,41 @@ def pin(parts, version):
 def main(decks):
     version = manifest_version()
     BACKUPS.mkdir(parents=True, exist_ok=True)
+    failed = 0
     for deck in map(Path, decks):
-        if open_in_powerpoint(deck):
-            print(f"✋ {deck.name}: open in PowerPoint — close it first (it would overwrite this on save)")
-            continue
-        with zipfile.ZipFile(deck) as z:
-            infos = z.infolist()
-            parts = {i.filename: z.read(i.filename) for i in infos}
-        done = pin(parts, version)
-        backup = BACKUPS / f"{deck.stem}-{time.strftime('%Y%m%d-%H%M%S')}{deck.suffix}"
-        shutil.copy2(deck, backup)
-        tmp = deck.with_name(f".{deck.name}.pinning")
-        order = [i.filename for i in infos] + [n for n in parts if n not in {i.filename for i in infos}]
-        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
-            for name in order:   # [Content_Types].xml stays first, as Office writes it
-                z.writestr(name, parts[name])
-        tmp.replace(deck)
-        print(f"📌 {deck.name}: {done} (backup: {backup})")
+        try:
+            pin_file(deck, version)
+        except Exception as e:   # one broken or protected deck must not stop the rest
+            failed += 1
+            print(f"❌ {deck}: {type(e).__name__}: {e}")
+    if failed:
+        sys.exit(1)
+
+
+def pin_file(deck, version):
+    if open_in_powerpoint(deck):
+        print(f"✋ {deck}: open in PowerPoint — close it first (it would overwrite this on save)")
+        return
+    with zipfile.ZipFile(deck) as z:
+        infos = z.infolist()
+        parts = {i.filename: z.read(i.filename) for i in infos}
+    before = dict(parts)
+    done = pin(parts, version)
+    if parts == before:
+        print(f"✔︎ {deck}: already pinned")
+        return
+    backup = BACKUPS / f"{deck.stem}-{time.strftime('%Y%m%d-%H%M%S')}{deck.suffix}"
+    shutil.copy2(deck, backup)
+    # Built outside the deck's folder, then written over the deck in place: in Google Drive a
+    # rename would show up as a new file, and a temp file next to it would sync for nothing.
+    tmp = BACKUPS / f".{deck.name}.pinning"
+    order = [i.filename for i in infos] + [n for n in parts if n not in before]
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in order:   # [Content_Types].xml stays first, as Office writes it
+            z.writestr(name, parts[name])
+    shutil.copyfile(tmp, deck)
+    tmp.unlink()
+    print(f"📌 {deck}: {done} (backup: {backup.name})")
 
 
 if __name__ == "__main__":
