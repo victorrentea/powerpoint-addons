@@ -137,7 +137,8 @@ function invertPixels(rgba) {
   return rgba;
 }
 
-function invertPng(base64) {
+// Decodes a PNG, lets `edit(rgba, width, height)` change its pixels, re-encodes it.
+function editPng(base64, edit) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -147,9 +148,9 @@ function invertPng(base64) {
       const g = canvas.getContext("2d");
       g.drawImage(img, 0, 0);
       const pixels = g.getImageData(0, 0, canvas.width, canvas.height);
-      invertPixels(pixels.data);
+      const result = edit(pixels.data, canvas.width, canvas.height);
       g.putImageData(pixels, 0, 0);
-      resolve(canvas.toDataURL("image/png").split(",")[1]);
+      resolve({ png: canvas.toDataURL("image/png").split(",")[1], result });
     };
     img.onerror = () => reject(new Error("PowerPoint returned an image the pane can't decode."));
     img.src = `data:image/png;base64,${base64}`;
@@ -202,8 +203,19 @@ async function replacePicture(original, base64, frame, name) {
 
 async function invertSelectedImage() {
   const original = await selectedPicture("Inverting");
-  await replacePicture(original, await invertPng(original.png), original, `${original.name} (inverted)`);
+  const { png } = await editPng(original.png, (rgba) => invertPixels(rgba));
+  await replacePicture(original, png, original, `${original.name} (inverted)`);
   status(`Inverted "${original.name}".`);
+}
+
+// 🧽 The neighborhood scales with the picture: a stock watermark's letters are ~1% of its width.
+async function removeWatermarkFromSelectedImage() {
+  const original = await selectedPicture("Removing the watermark");
+  const { png, result: changed } = await editPng(original.png,
+    (rgba, w, h) => Watermark.removeWatermark(rgba, w, h, Math.max(4, Math.round(w / 180))));
+  if (!changed) return status(`Found no watermark on "${original.name}".`);
+  await replacePicture(original, png, original, `${original.name} (no watermark)`);
+  status(`Removed the watermark of "${original.name}" (${changed} pixels repainted).`);
 }
 
 // ✂️ BiRefNet runs next to the pane, in server.js — a few GB of torch can't live in a browser.
@@ -365,6 +377,7 @@ Office.onReady(() => {
   $("scan").onclick = guarded(scanDeck);
   $("invert").onclick = guarded(invertSelectedImage);
   $("remove-bg").onclick = guarded(removeBackground);
+  $("remove-watermark").onclick = guarded(removeWatermarkFromSelectedImage);
   $("add-to-group").onclick = guarded(addToAnimatedGroup);
   $("underline-links").onclick = guarded(underlineLinksOnSelectedSlides);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
