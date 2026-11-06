@@ -137,24 +137,32 @@ function invertPixels(rgba) {
   return rgba;
 }
 
-// Decodes a PNG, lets `edit(rgba, width, height)` change its pixels, re-encodes it.
-function editPng(base64, edit) {
+// A canvas with the PNG drawn on it.
+function decodePng(base64) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
-      const g = canvas.getContext("2d");
-      g.drawImage(img, 0, 0);
-      const pixels = g.getImageData(0, 0, canvas.width, canvas.height);
-      const result = edit(pixels.data, canvas.width, canvas.height);
-      g.putImageData(pixels, 0, 0);
-      resolve({ png: canvas.toDataURL("image/png").split(",")[1], result });
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      resolve(canvas);
     };
     img.onerror = () => reject(new Error("PowerPoint returned an image the pane can't decode."));
     img.src = `data:image/png;base64,${base64}`;
   });
+}
+
+const encodePng = (canvas) => canvas.toDataURL("image/png").split(",")[1];
+
+// Decodes a PNG, lets `edit(rgba, width, height)` change its pixels, re-encodes it.
+async function editPng(base64, edit) {
+  const canvas = await decodePng(base64);
+  const g = canvas.getContext("2d");
+  const pixels = g.getImageData(0, 0, canvas.width, canvas.height);
+  const result = edit(pixels.data, canvas.width, canvas.height);
+  g.putImageData(pixels, 0, 0);
+  return { png: encodePng(canvas), result };
 }
 
 // ShapeCollection.addPicture is still preview-only, so pictures go in through the Common API.
@@ -208,6 +216,30 @@ async function invertSelectedImage() {
   status(`Inverted "${original.name}".`);
 }
 
+// Where a part of the picture sits on the slide: `box` is [left, top, right, bottom] in pixels of a `size` render.
+function frameOfBox(original, [x0, y0, x1, y1], [w, h]) {
+  const sx = original.width / w, sy = original.height / h;
+  return { left: original.left + x0 * sx, top: original.top + y0 * sy,
+    width: (x1 - x0) * sx, height: (y1 - y0) * sy };
+}
+
+// 🖼️ Cuts off the flat band around the picture; what's left doesn't move on the slide.
+async function cropBorderOfSelectedImage() {
+  const original = await selectedPicture("Cropping the border");
+  const canvas = await decodePng(original.png);
+  const { width, height } = canvas;
+  const box = Crop.borderBox(canvas.getContext("2d").getImageData(0, 0, width, height).data, width, height);
+  if (!box) return status(`"${original.name}" is a single color: nothing would be left.`, true);
+  const [x0, y0, x1, y1] = box;
+  if (x1 - x0 === width && y1 - y0 === height) return status(`No border to crop on "${original.name}".`);
+  const cropped = document.createElement("canvas");
+  cropped.width = x1 - x0;
+  cropped.height = y1 - y0;
+  cropped.getContext("2d").drawImage(canvas, -x0, -y0);
+  await replacePicture(original, encodePng(cropped), frameOfBox(original, box, [width, height]), `${original.name} (cropped)`);
+  status(`Cropped "${original.name}" from ${width}×${height} to ${cropped.width}×${cropped.height} px.`);
+}
+
 // 🧽 Claude finds the watermark, LaMa paints it out — both next to the pane, in server.js.
 async function removeWatermarkFromSelectedImage() {
   const original = await selectedPicture("Removing the watermark");
@@ -235,11 +267,7 @@ async function removeBackground() {
   const out = await res.json();
   if (!res.ok) throw new Error(out.error || `Background removal failed (${res.status}).`);
   // The cut-out comes back trimmed to the subject: put it exactly where the subject was.
-  const [x0, y0, x1, y1] = out.box, [w, h] = out.size;
-  const sx = original.width / w, sy = original.height / h;
-  const frame = { left: original.left + x0 * sx, top: original.top + y0 * sy,
-    width: (x1 - x0) * sx, height: (y1 - y0) * sy };
-  await replacePicture(original, out.png, frame, `${original.name} (no bg)`);
+  await replacePicture(original, out.png, frameOfBox(original, out.box, out.size), `${original.name} (no bg)`);
   status(`Removed the background of "${original.name}" (${(out.ms / 1000).toFixed(1)} s).`);
 }
 
@@ -382,6 +410,7 @@ Office.onReady(() => {
   $("invert").onclick = guarded(invertSelectedImage);
   $("remove-bg").onclick = guarded(removeBackground);
   $("remove-watermark").onclick = guarded(removeWatermarkFromSelectedImage);
+  $("crop-border").onclick = guarded(cropBorderOfSelectedImage);
   $("add-to-group").onclick = guarded(addToAnimatedGroup);
   $("underline-links").onclick = guarded(underlineLinksOnSelectedSlides);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {

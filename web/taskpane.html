@@ -9,6 +9,7 @@
   <script src="vendor/jszip.min.js"></script>
   <script src="regroup.js"></script>
   <script src="links.js"></script>
+  <script src="crop.js"></script>
   <link rel="stylesheet" href="taskpane.css">
 </head>
 <body>
@@ -19,7 +20,10 @@
       <button id="invert" class="primary" title="Replace the selected picture with its negative: black ↔ white, every color flipped, transparency kept.">Invert</button>
       <button id="remove-bg" class="primary" title="Cut the background away (BiRefNet, on this Mac's GPU). The result is trimmed to the subject and stays where the subject was.">Remove background</button>
     </div>
-    <button id="remove-watermark" class="primary" title="Claude finds the watermark (stock-site text or logo, even partial fragments) and LaMa paints it out on this Mac's GPU; a second look catches what the first missed. ~20–40 s. The picture stays where it was.">Remove watermark</button>
+    <div class="row">
+      <button id="remove-watermark" class="primary" title="Claude finds the watermark (stock-site text or logo, even partial fragments) and LaMa paints it out on this Mac's GPU; a second look catches what the first missed. ~20–40 s. The picture stays where it was.">Remove watermark</button>
+      <button id="crop-border" class="primary" title="Cut off the useless border: the flat band of transparent, white, black or any one color around the picture, each side on its own. What's left stays exactly where it was on the slide.">Crop border</button>
+    </div>
   </section>
 
   <section>
