@@ -44,14 +44,47 @@ const FontBar = (() => {
     return ranges;
   }
 
+  const SAMPLE_MAX = 24;
+  const WORD_CHAR = /[\p{L}\p{N}_'’-]/u;
+
+  // What the font list draws in each font: the selected text (first line), or
+  // the word the caret is in or next to; null with no text selection.
+  async function sample(ctx) {
+    const sel = ctx.presentation.getSelectedTextRangeOrNullObject();
+    sel.load("text,start,length");
+    await ctx.sync();
+    if (sel.isNullObject) return null;
+    let text = sel.text;
+    if (sel.length === 0) {
+      const shapes = ctx.presentation.getSelectedShapes();
+      shapes.load("items/type");
+      await ctx.sync();
+      const shape = shapes.items.find((s) => TEXT_TYPES.has(s.type));
+      if (!shape) return null;
+      const all = shape.textFrame.textRange;
+      all.load("text");
+      await ctx.sync();
+      let a = sel.start, b = sel.start;
+      while (a > 0 && WORD_CHAR.test(all.text[a - 1])) a--;
+      while (b < all.text.length && WORD_CHAR.test(all.text[b])) b++;
+      text = all.text.slice(a, b);
+    }
+    text = (text || "").split(/[\r\n\v]/).map((l) => l.trim()).find((l) => l) || "";
+    if (!text) return null;
+    return text.length > SAMPLE_MAX ? text.slice(0, SAMPLE_MAX - 1) + "…" : text;
+  }
+
   async function read() {
     return PowerPoint.run(async (ctx) => {
+      let text = null;
+      try { text = await sample(ctx); } catch { /* a table cell, a chart: no sample */ }
       const ranges = await targets(ctx);
       ranges.forEach((r) => r.font.load("name,size"));
       await ctx.sync();
       return {
         name: common(ranges.map((r) => r.font.name)),
         size: common(ranges.map((r) => r.font.size)),
+        sample: text,
       };
     });
   }

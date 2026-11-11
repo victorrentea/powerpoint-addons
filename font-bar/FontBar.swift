@@ -1,7 +1,7 @@
 // 🔤 Font bar, native side: a small panel stuck in PowerPoint's title bar, right of
 // the deck's name, with the selection's font name and size — editable.
 // Child of server.js (font-bar.js), which feeds it JSON lines on stdin
-//   {"panes":[{"pane","doc","name","size","at"}]}
+//   {"panes":[{"pane","doc","name","size","sample","at"}]}
 // and reads the edits from stdout
 //   {"pane":…, "name":…} | {"pane":…, "size":…}
 // No permissions needed: window frames come from CGWindowList, which gives
@@ -25,6 +25,7 @@ struct PaneState: Decodable {
   let doc: String
   let name: String?
   let size: Double?
+  let sample: String?   // the selected text, or the word at the caret
   let at: Double
 }
 struct Update: Decodable { let panes: [PaneState] }
@@ -77,6 +78,33 @@ final class PickerField: NSTextField {
   }
 }
 
+// A list row: the item on the left; on the right, the selection's own text
+// drawn in that row's font — to see how it would look before picking.
+final class RowCell: NSTableCellView {
+  let sampleField = NSTextField(labelWithString: "")
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    let label = NSTextField(labelWithString: "")
+    label.lineBreakMode = .byTruncatingTail
+    label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    sampleField.lineBreakMode = .byTruncatingTail
+    sampleField.textColor = .secondaryLabelColor
+    sampleField.alignment = .right
+    sampleField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    for v in [label, sampleField] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+    textField = label
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+      label.centerYAnchor.constraint(equalTo: centerYAnchor),
+      sampleField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+      sampleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+      sampleField.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 12),
+      sampleField.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.5),
+    ])
+  }
+  required init?(coder: NSCoder) { fatalError() }
+}
+
 // Decoration only: clicks go through to the field under it.
 final class Chevron: NSImageView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -94,7 +122,12 @@ final class Picker: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTabl
   let field = PickerField()
   let items: [String]
   let preview: Bool               // each font name drawn in its own font
-  let listWidth: CGFloat
+  let baseListWidth: CGFloat
+  var listWidth: CGFloat { sample.isEmpty ? baseListWidth : baseListWidth + 120 }
+  // Text drawn on the right of each row, in that row's font (font list only).
+  var sample = "" {
+    didSet { if sample != oldValue && isOpen { table.reloadData(); place() } }
+  }
   // Typed text that wins over the highlighted row (a size that isn't in the list).
   let typedValue: (String) -> String?
   var onPick: (String) -> Void = { _ in }
@@ -109,7 +142,7 @@ final class Picker: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTabl
   init(items: [String], preview: Bool, listWidth: CGFloat, typedValue: @escaping (String) -> String? = { _ in nil }) {
     self.items = items
     self.preview = preview
-    self.listWidth = listWidth
+    self.baseListWidth = listWidth
     self.typedValue = typedValue
     rowHeight = preview ? 26 : 22
     super.init()
@@ -265,24 +298,21 @@ final class Picker: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTabl
 
   func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
     let id = NSUserInterfaceItemIdentifier("cell")
-    let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? {
-      let cell = NSTableCellView()
+    let cell = tableView.makeView(withIdentifier: id, owner: nil) as? RowCell ?? {
+      let cell = RowCell()
       cell.identifier = id
-      let label = NSTextField(labelWithString: "")
-      label.lineBreakMode = .byTruncatingTail
-      label.translatesAutoresizingMaskIntoConstraints = false
-      cell.addSubview(label)
-      cell.textField = label
-      NSLayoutConstraint.activate([
-        label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10),
-        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
-        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-      ])
       return cell
     }()
     let item = shownItems[row]
     cell.textField?.stringValue = item
     cell.textField?.font = preview ? previewFont(item) : fieldFont
+    let showSample = preview && !sample.isEmpty
+    cell.sampleField.isHidden = !showSample
+    if showSample {
+      cell.sampleField.stringValue = sample
+      // The real face even for symbol fonts: Wingdings shows what Wingdings would do.
+      cell.sampleField.font = NSFontManager.shared.font(withFamily: item, traits: [], weight: 5, size: 15) ?? fieldFont
+    }
     return cell
   }
 
@@ -444,6 +474,7 @@ final class FontBar: NSObject {
     name.field.isEnabled = pane != nil
     size.field.isEnabled = pane != nil
     name.field.placeholderString = pane == nil ? "Victor Tools closed" : "Font"
+    name.sample = pane?.sample ?? ""
     if panel.isKeyWindow { return }   // don't overwrite what's being typed
     let nameText = pane?.name ?? ""
     let sizeText = pane?.size.map(formatSize) ?? ""
@@ -493,7 +524,7 @@ final class FontBar: NSObject {
 // list open, and saves bar.png + list.png in DIR — to iterate on the look
 // without touching the mouse or PowerPoint.
 func preview(_ bar: FontBar, dir: String, typed: String?) {
-  bar.panes = [PaneState(pane: "p", doc: "Deck", name: "Calibri", size: 28, at: 1)]
+  bar.panes = [PaneState(pane: "p", doc: "Deck", name: "Calibri", size: 28, sample: "Token ROI", at: 1)]
   bar.panel.setFrame(NSRect(x: -3000, y: 200, width: barWidth, height: barHeight), display: true)
   bar.show(bar.panes.first)
   bar.panel.orderFrontRegardless()

@@ -4,10 +4,10 @@
 //
 // Three pieces, this module is the hub between them:
 //   pane (web/fontbar.js, inside PowerPoint)  — reads/sets the font via Office.js
-//     POST /font/state  {pane, doc, name, size}     whenever the selection's font changes
+//     POST /font/state  {pane, doc, name, size, sample}  whenever the selection's font or text changes
 //     GET  /font/events?pane=…  (SSE)              ← {name} or {size} to apply
 //   bar (font-bar/FontBar.swift, native panel)   — child process, JSON lines both ways
-//     stdin  ← {panes: [{pane, doc, name, size, at}]}
+//     stdin  ← {panes: [{pane, doc, name, size, sample, at}]}
 //     stdout → {pane, name} | {pane, size}
 // Each deck with the pane open is one `pane`; the bar picks the one whose `doc`
 // matches PowerPoint's front window, else the one that reported last.
@@ -59,7 +59,7 @@ function events(req, res, paneId) {
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store",
     Connection: "keep-alive" });
   res.write(": hello\n\n");
-  const entry = panes.get(paneId) || { pane: paneId, doc: "", name: null, size: null, at: Date.now() };
+  const entry = panes.get(paneId) || { pane: paneId, doc: "", name: null, size: null, sample: null, at: Date.now() };
   entry.stream = res;
   panes.set(paneId, entry);
   // WKWebView drops an idle stream after a while; a comment every 20 s keeps it open.
@@ -71,12 +71,12 @@ function events(req, res, paneId) {
   });
 }
 
-// POST /font/state — {pane, doc, name, size}
+// POST /font/state — {pane, doc, name, size, sample}
 function state(body) {
-  const { pane, doc, name, size } = JSON.parse(body);
+  const { pane, doc, name, size, sample } = JSON.parse(body);
   const entry = panes.get(pane);
   if (!entry) return;   // no event stream yet: it registers the pane, and the pane re-reports on connect
-  Object.assign(entry, { doc: doc || "", name: name ?? null, size: size ?? null, at: Date.now() });
+  Object.assign(entry, { doc: doc || "", name: name ?? null, size: size ?? null, sample: sample ?? null, at: Date.now() });
   broadcast();
 }
 
