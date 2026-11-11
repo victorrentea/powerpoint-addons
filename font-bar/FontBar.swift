@@ -11,7 +11,7 @@
 import AppKit
 
 let powerPointBundle = "com.microsoft.Powerpoint"
-let barWidth: CGFloat = 220
+let barWidth: CGFloat = 228
 let barHeight: CGFloat = 26
 // Measured on PowerPoint 16.10x: the title row's middle is 20 pt below the
 // window's top; the comments icon starts ~165 pt left of its right edge.
@@ -193,7 +193,7 @@ final class Picker: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTabl
 
   private func place() {
     guard let window = field.window else { return }
-    let anchor = window.convertToScreen(field.convert(field.bounds, to: nil))
+    let anchor = window.convertToScreen(box.convert(box.bounds, to: nil))
     // The inset style pads the rows top and bottom: measure, don't multiply.
     table.layoutSubtreeIfNeeded()
     let rows = min(16, shownItems.count)
@@ -307,7 +307,7 @@ final class FontBar: NSObject {
                       .filter { !$0.hasPrefix(".") }
                       .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending },
                     preview: true, listWidth: 280)
-  let size = Picker(items: sizes.map(formatSize), preview: false, listWidth: 64) { text in
+  let size = Picker(items: sizes.map(formatSize), preview: false, listWidth: 100) { text in
     // A typed number goes as typed, in or out of the list.
     Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")).map(formatSize)
   }
@@ -344,7 +344,7 @@ final class FontBar: NSObject {
     stack.autoresizingMask = [.width, .height]
     NSLayoutConstraint.activate([
       name.box.widthAnchor.constraint(equalToConstant: 152),
-      size.box.widthAnchor.constraint(equalToConstant: 64),
+      size.box.widthAnchor.constraint(equalToConstant: 72),
       name.box.heightAnchor.constraint(equalToConstant: barHeight),
       size.box.heightAnchor.constraint(equalToConstant: barHeight),
     ])
@@ -497,13 +497,15 @@ func preview(_ bar: FontBar, dir: String, typed: String?) {
   bar.panel.setFrame(NSRect(x: -3000, y: 200, width: barWidth, height: barHeight), display: true)
   bar.show(bar.panes.first)
   bar.panel.orderFrontRegardless()
-  bar.name.open()
-  if let typed {
-    bar.name.field.stringValue = typed
-    bar.name.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+  // `typed` = "size" opens the size list instead.
+  let picker = typed == "size" ? bar.size : bar.name
+  picker.open()
+  if let typed, typed != "size" {
+    picker.field.stringValue = typed
+    picker.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
   }
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-    for (window, file) in [(bar.panel as NSWindow, "bar.png"), (bar.name.list as NSWindow, "list.png")] {
+    for (window, file) in [(bar.panel as NSWindow, "bar.png"), (picker.list as NSWindow, "list.png")] {
       guard let view = window.contentView,
             let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
         FileHandle.standardError.write("preview: \(file) not drawn (visible: \(window.isVisible))\n".data(using: .utf8)!)
