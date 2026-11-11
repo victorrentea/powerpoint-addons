@@ -1,11 +1,12 @@
 // Static HTTPS server for the add-in: Office only loads task panes over https.
 // Plus the ✂️ background removal (bg-remove.js) and 🧽 watermark removal (watermark.js)
-// the pane can't do in the browser.
+// the pane can't do in the browser, and the 🔤 font bar's hub (font-bar.js).
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const bgRemove = require("./bg-remove");
 const watermark = require("./watermark");
+const fontBar = require("./font-bar");
 
 const PORT = 44344;
 const ROOT = path.join(__dirname, "web");
@@ -62,10 +63,20 @@ async function watermarkApi(req, res) {
 }
 
 https.createServer(tls, (req, res) => {
-  console.log(new Date().toISOString(), req.method, req.url, req.headers["user-agent"] || "");
+  // 🔤 The pane reports the font on every selection change: too chatty for the log.
+  if (!req.url.startsWith("/font/state")) {
+    console.log(new Date().toISOString(), req.method, req.url, req.headers["user-agent"] || "");
+  }
   const urlPath = decodeURIComponent(new URL(req.url, "https://localhost").pathname);
   if (req.method === "POST" && urlPath.startsWith("/bg-remove")) return api(req, res, urlPath);
   if (req.method === "POST" && urlPath === "/watermark") return watermarkApi(req, res);
+  if (req.method === "GET" && urlPath === "/font/events") {
+    return fontBar.events(req, res, new URL(req.url, "https://localhost").searchParams.get("pane"));
+  }
+  if (req.method === "POST" && urlPath === "/font/state") {
+    return readBody(req).then((b) => { fontBar.state(b); res.writeHead(204).end(); })
+      .catch((e) => json(res, 400, { error: e.message }));
+  }
   const file = path.join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, data) => {
@@ -77,5 +88,6 @@ https.createServer(tls, (req, res) => {
 }).listen(PORT, "127.0.0.1", () => console.log(`powerpoint-addons on https://localhost:${PORT}`));
 
 bgRemove.watchPowerPoint();
+fontBar.startBar();
 
-for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => { bgRemove.stop(); process.exit(0); });
+for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => { bgRemove.stop(); fontBar.stop(); process.exit(0); });
