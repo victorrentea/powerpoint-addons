@@ -1,7 +1,7 @@
 // node --test — runs web/crop.js on hand-painted pixels, outside PowerPoint.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { borderBox } = require("../web/crop.js");
+const { borderBox, frameOfBox } = require("../web/crop.js");
 
 const WHITE = [255, 255, 255, 255], BLACK = [0, 0, 0, 255], RED = [200, 30, 30, 255];
 const BLUE = [20, 40, 200, 255], CLEAR = [0, 0, 0, 0];
@@ -83,4 +83,20 @@ test("a blurred rim doesn't hide the border behind it", () => {
   const p = framed(30, 30, [6, 6, 24, 24], (x, y) =>
     (x === 0 || y === 0 || x === 29 || y === 29 ? half : WHITE));
   assert.deepEqual(box(p), [6, 6, 24, 24]);
+});
+
+const near = (frame, expected) => Object.keys(expected).forEach((k) =>
+  assert.ok(Math.abs(frame[k] - expected[k]) < 1e-9, `${k}: ${frame[k]} ≠ ${expected[k]}`));
+const slab = { left: 100, top: 50, width: 200, height: 100 };
+
+test("an upright picture keeps the part where it was", () => {
+  near(frameOfBox(slab, [10, 20, 110, 70], [400, 200]), { left: 105, top: 60, width: 50, height: 25 });
+});
+
+test("a rotated picture keeps the part where it shows: its center turns around the frame's", () => {
+  // Left half of a 200×100 frame centered at (200, 100), turned 90° clockwise: it now shows on top.
+  near(frameOfBox({ ...slab, rotation: 90 }, [0, 0, 200, 200], [400, 200]),
+    { left: 150, top: 0, width: 100, height: 100 });
+  // The whole picture stays exactly the original frame, at any angle.
+  near(frameOfBox({ ...slab, rotation: -17 }, [0, 0, 400, 200], [400, 200]), slab);
 });

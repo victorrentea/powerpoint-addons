@@ -175,25 +175,32 @@ function insertPicture(base64, { left, top, width, height }) {
   });
 }
 
-// The selected picture, rendered at RENDER_SCALE: its id, name, frame and PNG.
+// The selected picture, rendered at RENDER_SCALE: its id, name, frame, rotation and PNG.
+// The render is taken upright: a rotated picture renders as its slanted bounding box, squeezed
+// into the frame's width, so every box found in it would be off and the result would shrink.
 async function selectedPicture(action) {
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.10")) {
     throw new Error(`${action} needs PowerPointApi 1.10 (PowerPoint for Mac 16.105 or newer).`);
   }
   return PowerPoint.run(async (ctx) => {
     const selected = ctx.presentation.getSelectedShapes();
-    selected.load("items/id,items/type,items/name,items/left,items/top,items/width,items/height");
+    selected.load("items/id,items/type,items/name,items/left,items/top,items/width,items/height,items/rotation");
     await ctx.sync();
     const shape = selected.items.find((s) => s.type === PowerPoint.ShapeType.image);
     if (!shape) throw new Error("Select a picture on the slide first.");
-    const png = shape.getImageAsBase64({ width: Math.round(shape.width * RENDER_SCALE) });
-    await ctx.sync();
-    const { id, name, left, top, width, height } = shape;
-    return { id, name, left, top, width, height, png: png.value };
+    const { id, name, left, top, width, height, rotation } = shape;
+    if (rotation) { shape.rotation = 0; await ctx.sync(); }
+    try {
+      const png = shape.getImageAsBase64({ width: Math.round(width * RENDER_SCALE) });
+      await ctx.sync();
+      return { id, name, left, top, width, height, rotation, png: png.value };
+    } finally {
+      if (rotation) { shape.rotation = rotation; await ctx.sync(); }
+    }
   });
 }
 
-// Puts `base64` at `frame` on the current slide and deletes the original picture.
+// Puts `base64` at `frame` on the current slide, turned like the original, and deletes the original.
 async function replacePicture(original, base64, frame, name) {
   // Insert first, delete after: if the insert fails, the original picture is still there.
   await insertPicture(base64, frame);
@@ -204,7 +211,9 @@ async function replacePicture(original, base64, frame, name) {
     if (!old.isNullObject) old.delete();
     shapes.load("items/name");
     await ctx.sync();
-    shapes.items[shapes.items.length - 1].name = name;
+    const inserted = shapes.items[shapes.items.length - 1];
+    inserted.name = name;
+    if (original.rotation) inserted.rotation = original.rotation;
     await ctx.sync();
   });
 }
@@ -214,13 +223,6 @@ async function invertSelectedImage() {
   const { png } = await editPng(original.png, (rgba) => invertPixels(rgba));
   await replacePicture(original, png, original, `${original.name} (inverted)`);
   status(`Inverted "${original.name}".`);
-}
-
-// Where a part of the picture sits on the slide: `box` is [left, top, right, bottom] in pixels of a `size` render.
-function frameOfBox(original, [x0, y0, x1, y1], [w, h]) {
-  const sx = original.width / w, sy = original.height / h;
-  return { left: original.left + x0 * sx, top: original.top + y0 * sy,
-    width: (x1 - x0) * sx, height: (y1 - y0) * sy };
 }
 
 // 🖼️ Cuts off the flat band around the picture; what's left doesn't move on the slide.
@@ -236,7 +238,7 @@ async function cropBorderOfSelectedImage() {
   cropped.width = x1 - x0;
   cropped.height = y1 - y0;
   cropped.getContext("2d").drawImage(canvas, -x0, -y0);
-  await replacePicture(original, encodePng(cropped), frameOfBox(original, box, [width, height]), `${original.name} (cropped)`);
+  await replacePicture(original, encodePng(cropped), Crop.frameOfBox(original, box, [width, height]), `${original.name} (cropped)`);
   status(`Cropped "${original.name}" from ${width}×${height} to ${cropped.width}×${cropped.height} px.`);
 }
 
@@ -267,7 +269,7 @@ async function removeBackground() {
   const out = await res.json();
   if (!res.ok) throw new Error(out.error || `Background removal failed (${res.status}).`);
   // The cut-out comes back trimmed to the subject: put it exactly where the subject was.
-  await replacePicture(original, out.png, frameOfBox(original, out.box, out.size), `${original.name} (no bg)`);
+  await replacePicture(original, out.png, Crop.frameOfBox(original, out.box, out.size), `${original.name} (no bg)`);
   status(`Removed the background of "${original.name}" (${(out.ms / 1000).toFixed(1)} s).`);
 }
 

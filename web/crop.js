@@ -67,7 +67,21 @@
     return [left, top, right, bottom];
   }
 
-  const api = { borderBox };
+  // Where a part of the picture sits on the slide: `box` is [left, top, right, bottom] in pixels
+  // of an upright `size` render. PowerPoint turns a picture around its frame's center, so on a
+  // rotated one the part's center turns with it around the original center; the frame it gets
+  // is the upright one, turned by the same `rotation` (degrees, clockwise) once inserted.
+  function frameOfBox(original, [x0, y0, x1, y1], [w, h]) {
+    const sx = original.width / w, sy = original.height / h;
+    const width = (x1 - x0) * sx, height = (y1 - y0) * sy;
+    const dx = ((x0 + x1) / 2) * sx - original.width / 2, dy = ((y0 + y1) / 2) * sy - original.height / 2;
+    const turn = ((original.rotation || 0) * Math.PI) / 180, cos = Math.cos(turn), sin = Math.sin(turn);
+    const cx = original.left + original.width / 2 + dx * cos - dy * sin;
+    const cy = original.top + original.height / 2 + dx * sin + dy * cos;
+    return { left: cx - width / 2, top: cy - height / 2, width, height };
+  }
+
+  const api = { borderBox, frameOfBox };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Crop = api;
 })(this);
