@@ -1,6 +1,6 @@
 // Static HTTPS server for the add-in: Office only loads task panes over https.
 // Plus the ✂️ background removal (bg-remove.js) and 🧽 watermark removal (watermark.js)
-// the pane can't do in the browser, and the 🔤 font bar's hub (font-bar.js).
+// the pane can't do in the browser, and keeps the 🔤 font bar running (font-bar.js).
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
@@ -63,20 +63,10 @@ async function watermarkApi(req, res) {
 }
 
 https.createServer(tls, (req, res) => {
-  // 🔤 The pane reports the font on every selection change: too chatty for the log.
-  if (!req.url.startsWith("/font/state")) {
-    console.log(new Date().toISOString(), req.method, req.url, req.headers["user-agent"] || "");
-  }
+  console.log(new Date().toISOString(), req.method, req.url, req.headers["user-agent"] || "");
   const urlPath = decodeURIComponent(new URL(req.url, "https://localhost").pathname);
   if (req.method === "POST" && urlPath.startsWith("/bg-remove")) return api(req, res, urlPath);
   if (req.method === "POST" && urlPath === "/watermark") return watermarkApi(req, res);
-  if (req.method === "GET" && urlPath === "/font/events") {
-    return fontBar.events(req, res, new URL(req.url, "https://localhost").searchParams.get("pane"));
-  }
-  if (req.method === "POST" && urlPath === "/font/state") {
-    return readBody(req).then((b) => { fontBar.state(b); res.writeHead(204).end(); })
-      .catch((e) => json(res, 400, { error: e.message }));
-  }
   const file = path.join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath);
   if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, data) => {

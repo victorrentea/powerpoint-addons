@@ -1,13 +1,11 @@
 // 🔤 Font bar, native side: a small panel stuck in PowerPoint's title bar, right of
 // the deck's name, with the selection's font name and size — editable.
-// Child of server.js (font-bar.js), which feeds it JSON lines on stdin
-//   {"panes":[{"pane","doc","name","size","sample","at"}]}
-// and reads the edits from stdout
-//   {"pane":…, "name":…} | {"pane":…, "size":…}
-// No permissions needed: window frames come from CGWindowList, which gives
-// bounds (not titles) to everyone. With Screen Recording it also reads the
-// window titles and matches the deck exactly; without, it shows the pane that
-// reported last, which is the deck you're clicking around in.
+// Child of server.js (font-bar.js), which only keeps it alive; it exits when its
+// stdin closes (the server is gone).
+// It asks PowerPoint itself, over AppleScript, what the selection's font is and
+// sets it the same way — any deck, Victor Tools open or not. That takes the
+// Automation permission (System Settings › Privacy › Automation), asked once.
+// Window frames come from CGWindowList, which gives them to everyone.
 import AppKit
 
 let powerPointBundle = "com.microsoft.Powerpoint"
@@ -20,15 +18,184 @@ let rightInset: CGFloat = 180
 let fieldFont = NSFont.systemFont(ofSize: 14)
 let sizes: [Double] = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 66, 72, 80, 88, 96]
 
-struct PaneState: Decodable {
-  let pane: String
-  let doc: String
+// The font of the selection: nil name/size when mixed.
+struct Selection: Equatable {
   let name: String?
   let size: Double?
   let sample: String?   // the selected text, or the word at the caret
-  let at: Double
 }
-struct Update: Decodable { let panes: [PaneState] }
+
+// PowerPoint over AppleScript, on a queue of its own: an Apple Event waits for
+// PowerPoint, which can be busy (a dialog, a save) — never on the main thread.
+// The selection: the selected text if there is some; otherwise (a caret, or
+// shapes selected as objects) all the text of the selected shapes.
+final class PowerPointScript {
+  private let queue = DispatchQueue(label: "font-bar.applescript")
+  private var reader: NSAppleScript?
+  private var lastError: String?
+  private static let US = "\u{1F}", RS = "\u{1E}"
+
+  // Names clash with PowerPoint's terms (full, out, offset…): every variable is v-something.
+  private static let readSource = """
+    on fontOf(vRange)
+      tell application "Microsoft PowerPoint"
+        set vFont to font of vRange
+        set vName to font name of vFont
+        set vSize to font size of vFont
+      end tell
+      if vName is missing value then set vName to ""
+      if vSize is missing value then set vSize to 0
+      return vName & (character id 31) & (vSize as text)
+    end fontOf
+    set vUS to character id 31
+    set vRS to character id 30
+    with timeout of 2 seconds
+      tell application "Microsoft PowerPoint"
+        if (count of document windows) = 0 then return "none"
+        set vSel to selection of active window
+        set vType to selection type of vSel
+        if vType is selection type text then
+          set vRange to text range of vSel
+          set vProps to properties of vRange
+          set vWhole to ""
+          try
+            set vWhole to content of text range of text frame of shape 1 of shape range of vSel
+          end try
+          return "text" & vRS & my fontOf(vRange) & vRS & ((offset of vProps) as text) & vUS & ((text length of vProps) as text) & vRS & vWhole
+        else if vType is selection type shapes then
+          set vOut to "shapes"
+          set vShapes to shape range of vSel
+          repeat with i from 1 to count of shapes of vShapes
+            try
+              set vShape to shape i of vShapes
+              if has text of text frame of vShape then set vOut to vOut & vRS & my fontOf(text range of text frame of vShape)
+            end try
+          end repeat
+          return vOut
+        else
+          return "other"
+        end if
+      end tell
+    end timeout
+    """
+
+  // The selection's font, or nil when there's no text to show (no deck, a
+  // picture, the slide sorter, PowerPoint busy).
+  func read(_ done: @escaping (Selection?) -> Void) {
+    queue.async {
+      if self.reader == nil {
+        self.reader = NSAppleScript(source: Self.readSource)
+        var err: NSDictionary?
+        self.reader?.compileAndReturnError(&err)
+        if let err { log("read script does not compile: \(err)") }
+      }
+      var err: NSDictionary?
+      let out = self.reader?.executeAndReturnError(&err).stringValue
+      // Once per new error, not every 0.8 s; -1712 is PowerPoint busy, -1728 nothing selected.
+      let code = err?[NSAppleScript.errorNumber] as? Int
+      let message = err.map { "read: \($0[NSAppleScript.errorMessage] ?? $0)" }
+      if message != self.lastError, code != -1712, code != -1728 { message.map(log) }
+      self.lastError = message
+      let sel = out.flatMap(Self.parse)
+      DispatchQueue.main.async { done(sel) }
+    }
+  }
+
+  static func parse(_ out: String) -> Selection? {
+    let records = out.components(separatedBy: RS)
+    func font(_ r: String) -> (String?, Double?) {
+      let f = r.components(separatedBy: US)
+      let name = f.first.flatMap { $0.isEmpty ? nil : $0 }
+      let size = f.count > 1 ? Double(f[1].replacingOccurrences(of: ",", with: ".")).flatMap { $0 > 0 ? $0 : nil } : nil
+      return (name, size)
+    }
+    switch records.first {
+    case "text" where records.count >= 4:
+      let (name, size) = font(records[1])
+      let pos = records[2].components(separatedBy: US).compactMap { Int($0) }
+      let whole = records[3...].joined(separator: RS)
+      return Selection(name: name, size: size, sample: pos.count == 2 ? sample(whole, offset: pos[0], length: pos[1]) : nil)
+    case "shapes" where records.count >= 2:
+      let fonts = records.dropFirst().map(font)
+      return Selection(name: common(fonts.map { $0.0 }), size: common(fonts.map { $0.1 }), sample: nil)
+    default:
+      return nil
+    }
+  }
+
+  // One value when they all agree, nil when mixed or missing.
+  static func common<T: Hashable>(_ values: [T?]) -> T? {
+    let set = Set(values)
+    return set.count == 1 ? set.first! : nil
+  }
+
+  // What the font list draws in each font: the selected text (first line), or
+  // the word the caret is in or next to. PowerPoint counts from 1, in UTF-16 units.
+  static func sample(_ whole: String, offset: Int, length: Int) -> String? {
+    let text = whole as NSString
+    let start = max(0, min(text.length, offset - 1))
+    var picked: String
+    if length > 0 {
+      picked = text.substring(with: NSRange(location: start, length: min(length, text.length - start)))
+    } else {
+      let word = try! NSRegularExpression(pattern: "[\\p{L}\\p{N}_'’-]")
+      func isWord(_ i: Int) -> Bool {
+        word.firstMatch(in: whole, range: NSRange(location: i, length: 1)) != nil
+      }
+      var a = start, b = start
+      while a > 0 && isWord(a - 1) { a -= 1 }
+      while b < text.length && isWord(b) { b += 1 }
+      picked = text.substring(with: NSRange(location: a, length: b - a))
+    }
+    let line = picked.components(separatedBy: CharacterSet(charactersIn: "\r\n\u{0B}"))
+      .map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+    if line.isEmpty { return nil }
+    return line.count > 24 ? String(line.prefix(23)) + "…" : line
+  }
+
+  // Sets the font name or size on the selection, as `read` sees it.
+  func apply(name: String? = nil, size: Double? = nil, then done: @escaping () -> Void) {
+    let property: String
+    if let name {
+      let quoted = name.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+      property = "font name of font of vRange to \"\(quoted)\""
+    } else if let size {
+      property = "font size of font of vRange to \(size)"
+    } else { return }
+    let source = """
+      with timeout of 5 seconds
+        tell application "Microsoft PowerPoint"
+          set vSel to selection of active window
+          if selection type of vSel is selection type text then
+            set vRange to text range of vSel
+            set \(property)
+          else if selection type of vSel is selection type shapes then
+            set vShapes to shape range of vSel
+            repeat with i from 1 to count of shapes of vShapes
+              try
+                set vShape to shape i of vShapes
+                if has text of text frame of vShape then
+                  set vRange to text range of text frame of vShape
+                  set \(property)
+                end if
+              end try
+            end repeat
+          end if
+        end tell
+      end timeout
+      """
+    queue.async {
+      var err: NSDictionary?
+      NSAppleScript(source: source)?.executeAndReturnError(&err)
+      if let err { log("apply: \(err[NSAppleScript.errorMessage] ?? err)") }
+      DispatchQueue.main.async(execute: done)
+    }
+  }
+}
+
+func log(_ message: String) {
+  FileHandle.standardError.write("\(Date()) \(message)\n".data(using: .utf8)!)
+}
 
 final class BarPanel: NSPanel {
   override var canBecomeKey: Bool { true }
@@ -341,9 +508,11 @@ final class FontBar: NSObject {
     // A typed number goes as typed, in or out of the list.
     Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")).map(formatSize)
   }
-  var panes: [PaneState] = []
-  var shown: PaneState?
+  let powerPointScript = PowerPointScript()
+  var shown: Selection?
   var timer: Timer?
+  var reading = false
+  var lastRead = Date.distantPast
 
   override init() {
     super.init()
@@ -356,13 +525,12 @@ final class FontBar: NSObject {
 
     name.field.toolTip = "Font of the selection (Victor Tools). Click, type to search, Return or click to apply."
     size.field.toolTip = "Font size of the selection (Victor Tools). Click, type a size, Return to apply."
-    size.field.placeholderString = "–"
-    name.onPick = { [weak self] family in self?.send(["name": family]) }
+    name.onPick = { [weak self] family in self?.send(name: family) }
     size.onPick = { [weak self] text in
       guard let value = Double(text.replacingOccurrences(of: ",", with: ".")), value >= 1, value <= 4000 else {
         self?.giveBackFocus(); return
       }
-      self?.send(["size": (value * 2).rounded() / 2])   // PowerPoint keeps half points
+      self?.send(size: (value * 2).rounded() / 2)   // PowerPoint keeps half points
     }
     name.onCancel = { [weak self] in self?.giveBackFocus() }
     size.onCancel = { [weak self] in self?.giveBackFocus() }
@@ -394,6 +562,11 @@ final class FontBar: NSObject {
     }
     NSWorkspace.shared.notificationCenter.addObserver(
       self, selector: #selector(appChanged), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+    // A click is what usually changes the selection: read it right after, not at
+    // the next poll. Mouse events need no permission to watch (keys would).
+    NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { self?.readSelection() }
+    }
     if !CommandLine.arguments.contains("--preview") {
       appChanged()
       readStdin()
@@ -441,7 +614,7 @@ final class FontBar: NSObject {
   }
 
   func follow() {
-    guard let app = powerPoint, let (frame, title) = frontWindow(pid: app.processIdentifier) else {
+    guard let app = powerPoint, let (frame, _) = frontWindow(pid: app.processIdentifier) else {
       if !panel.isKeyWindow { hide() }
       return
     }
@@ -456,39 +629,47 @@ final class FontBar: NSObject {
     }
     let target = NSRect(x: left, y: frame.maxY - titleRowMiddle - barHeight / 2, width: barWidth, height: barHeight)
     if panel.frame != target { panel.setFrame(target, display: false) }
-    show(pickPane(title: title))
-    if !panel.isVisible { panel.orderFrontRegardless() }
+    if !panel.isVisible { panel.orderFrontRegardless(); readSelection() }
+    // Typing or the ribbon's own boxes change the font without a click here: poll.
+    if Date().timeIntervalSince(lastRead) > readEvery { readSelection() }
   }
 
-  func pickPane(title: String?) -> PaneState? {
-    if let title, let match = panes.filter({ !$0.doc.isEmpty && title.hasPrefix($0.doc) }).max(by: { $0.at < $1.at }) {
-      return match
+  // Each read is ~10 Apple Events (~120 ms of PowerPoint's time): not faster than this.
+  let readEvery: TimeInterval = 0.8
+
+  func readSelection() {
+    guard !reading, powerPoint != nil, panel.isVisible, !panel.isKeyWindow else { return }
+    reading = true
+    lastRead = Date()
+    powerPointScript.read { [weak self] sel in
+      guard let self else { return }
+      self.reading = false
+      self.lastRead = Date()
+      if sel != self.shown || !self.panel.isKeyWindow { self.show(sel) }
     }
-    return panes.max(by: { $0.at < $1.at })
   }
 
   // MARK: Showing and editing
 
-  func show(_ pane: PaneState?) {
-    shown = pane
-    name.field.isEnabled = pane != nil
-    size.field.isEnabled = pane != nil
-    name.field.placeholderString = pane == nil ? "Victor Tools closed" : "Font"
-    name.sample = pane?.sample ?? ""
+  // nil: nothing with text selected — the boxes stay empty and grey.
+  func show(_ sel: Selection?) {
+    shown = sel
+    name.field.isEnabled = sel != nil
+    size.field.isEnabled = sel != nil
+    // Hints only when there's text selected (mixed fonts); nothing selected: blank boxes.
+    name.field.placeholderString = sel == nil ? nil : "Font"
+    size.field.placeholderString = sel == nil ? nil : "–"
+    name.sample = sel?.sample ?? ""
     if panel.isKeyWindow { return }   // don't overwrite what's being typed
-    let nameText = pane?.name ?? ""
-    let sizeText = pane?.size.map(formatSize) ?? ""
+    let nameText = sel?.name ?? ""
+    let sizeText = sel?.size.map(formatSize) ?? ""
     if name.field.stringValue != nameText { name.field.stringValue = nameText }
     if size.field.stringValue != sizeText { size.field.stringValue = sizeText }
   }
 
-  func send(_ change: [String: Any]) {
-    if let pane = shown {
-      var cmd = change
-      cmd["pane"] = pane.pane
-      if let data = try? JSONSerialization.data(withJSONObject: cmd), let line = String(data: data, encoding: .utf8) {
-        FileHandle.standardOutput.write((line + "\n").data(using: .utf8)!)
-      }
+  func send(name family: String? = nil, size points: Double? = nil) {
+    if shown != nil {
+      powerPointScript.apply(name: family, size: points) { [weak self] in self?.readSelection() }
     }
     giveBackFocus()
   }
@@ -501,21 +682,12 @@ final class FontBar: NSObject {
     show(shown)
   }
 
-  // MARK: Input from the server
+  // MARK: The server
 
+  // Nothing comes in; the end of stdin means the server is gone.
   func readStdin() {
-    var buffer = Data()
     FileHandle.standardInput.readabilityHandler = { handle in
-      let chunk = handle.availableData
-      if chunk.isEmpty { exit(0) }   // the server is gone
-      buffer.append(chunk)
-      while let nl = buffer.firstIndex(of: 0x0A) {
-        let line = buffer.subdata(in: buffer.startIndex..<nl)
-        buffer.removeSubrange(buffer.startIndex...nl)
-        if let update = try? JSONDecoder().decode(Update.self, from: line) {
-          DispatchQueue.main.async { self.panes = update.panes; if self.powerPoint != nil { self.follow() } }
-        }
-      }
+      if handle.availableData.isEmpty { exit(0) }
     }
   }
 }
@@ -524,14 +696,14 @@ final class FontBar: NSObject {
 // list open, and saves bar.png + list.png in DIR — to iterate on the look
 // without touching the mouse or PowerPoint.
 func preview(_ bar: FontBar, dir: String, typed: String?) {
-  bar.panes = [PaneState(pane: "p", doc: "Deck", name: "Calibri", size: 28, sample: "Token ROI", at: 1)]
   bar.panel.setFrame(NSRect(x: -3000, y: 200, width: barWidth, height: barHeight), display: true)
-  bar.show(bar.panes.first)
+  // `typed` = "empty": nothing with text selected.
+  bar.show(typed == "empty" ? nil : Selection(name: "Calibri", size: 28, sample: "Token ROI"))
   bar.panel.orderFrontRegardless()
   // `typed` = "size" opens the size list instead.
   let picker = typed == "size" ? bar.size : bar.name
   picker.open()
-  if let typed, typed != "size" {
+  if let typed, typed != "size", typed != "empty" {
     picker.field.stringValue = typed
     picker.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
   }
@@ -561,12 +733,39 @@ func registerOfficeFonts() {
   CTFontManagerRegisterFontURLs(fonts as CFArray, .process, true, nil)
 }
 
+// Started by node (server.js), macOS would ask *node* for the Automation
+// permission — and a background node never gets the prompt, only a silent "not
+// authorized". So the bar first replaces itself (same pid, same stdin) with a
+// copy that answers for itself, as `font-bar` (Info.plist inside the binary).
+@_silgen_name("responsibility_spawnattrs_setdisclaim")
+func responsibility_spawnattrs_setdisclaim(_ attr: UnsafeMutablePointer<posix_spawnattr_t?>, _ disclaim: Int32) -> Int32
+
+func disclaimResponsibility() {
+  guard ProcessInfo.processInfo.environment["FONT_BAR_DISCLAIMED"] == nil else { return }
+  setenv("FONT_BAR_DISCLAIMED", "1", 1)
+  var attr: posix_spawnattr_t?
+  posix_spawnattr_init(&attr)
+  posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETEXEC))
+  let disclaimed = responsibility_spawnattrs_setdisclaim(&attr, 1)
+  if disclaimed != 0 { log("responsibility_spawnattrs_setdisclaim: \(disclaimed)") }
+  let argv = CommandLine.unsafeArgv
+  var pid: pid_t = 0
+  let rc = posix_spawn(&pid, Bundle.main.executablePath ?? CommandLine.arguments[0], nil, &attr, argv, environ)
+  log("could not disclaim responsibility (\(rc)), going on as node's")   // SETEXEC returns only on failure
+}
+
+disclaimResponsibility()
 registerOfficeFonts()
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let args = CommandLine.arguments
 if let i = args.firstIndex(of: "--preview") {
   app.appearance = NSAppearance(named: args.count > i + 2 && args[i + 2] == "light" ? .aqua : .darkAqua)
+}
+// `font-bar --probe`: prints what it reads from PowerPoint once, and exits.
+if args.contains("--probe") {
+  PowerPointScript().read { sel in print(sel.map { "\($0)" } ?? "nothing with text selected"); exit(0) }
+  app.run()
 }
 let bar = FontBar()
 if let i = args.firstIndex(of: "--preview") {

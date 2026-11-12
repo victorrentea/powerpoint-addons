@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>ro.victorrentea.powerpoint-font-bar</string>
+  <key>CFBundleName</key><string>PowerPoint Font Bar</string>
+  <key>CFBundleExecutable</key><string>font-bar</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>The font bar reads and sets the font of what you select in PowerPoint.</string>
+</dict>
+</plist>

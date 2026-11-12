@@ -415,7 +415,6 @@ Office.onReady(() => {
   $("crop-border").onclick = guarded(cropBorderOfSelectedImage);
   $("add-to-group").onclick = guarded(addToAnimatedGroup);
   $("underline-links").onclick = guarded(underlineLinksOnSelectedSlides);
-  FontBar.start();
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
     status("This PowerPoint is too old for the add-in (needs PowerPointApi 1.5).", true);
   }
