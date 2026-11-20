@@ -1,5 +1,5 @@
 """✂️ BiRefNet background removal, kept warm by server.js for the pane's
-"Remove background" (moved here from Victor Addons' ⌘⇧V bezel, 2026-10-06).
+"Remove background" (moved here from Victor Mac' ⌘⇧V bezel, 2026-10-06).
 
 Line protocol on stdin/stdout, one JSON object per line:
   startup  → {"ready": true, "load_ms": …}
