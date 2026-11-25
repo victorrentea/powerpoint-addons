@@ -26,3 +26,6 @@ A sideloaded add-in gets no ribbon button of its own: it has to be opened from H
 Installed as LaunchAgent `ro.victorrentea.powerpoint-addons` (source: `launchagent.plist`), starts at login, log in `/tmp/powerpoint-addons.log`.
 Restart after editing `server.js`: `launchctl kickstart -k gui/$(id -u)/ro.victorrentea.powerpoint-addons`.
 Edits under `web/` need no restart (served with `no-store`), just reopen the pane.
+
+## 🗄️ Rolling backup of the decks (`backup/`)
+LaunchAgent `ro.victorrentea.pptx-backup` (source: `backup/launchagent-backup.plist`, installed in `~/Library/LaunchAgents/`) runs `backup/pptx-backup.sh` at login and every 6 h: every `.pptx` under `~/My Drive` whose mtime/size changed since the last run is copied to `~/Backups/pptx/<YYYY-MM-DD_HHMM>__<path with / → __>.pptx`. Only the 50 newest snapshots are kept, all decks together; older ones are deleted. Files touched in the last 2 min are left for the next run (PowerPoint may still be saving). The first run seeded only the decks changed in the last 7 days. Log: `/tmp/pptx-backup.log`; run now: `launchctl kickstart gui/$(id -u)/ro.victorrentea.pptx-backup`.
