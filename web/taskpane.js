@@ -393,6 +393,70 @@ async function underlineLinksOnSelectedSlides() {
   status(links ? `Underlined ${links} link run(s) in blue on ${rebuiltSlides} of ${where}.` : `No links to restyle on ${where}.`);
 }
 
+// 🌗 Dark ↔ light on the selected slides. The engine is web/dark.js; what a slide needs to get back
+// exactly as it was travels with it, in its DARK_TAG tag.
+const DARK_TAG = "VICTOR_DARK";
+
+const darkIo = {
+  parse: (s) => new DOMParser().parseFromString(s, "application/xml"),
+  serialize: (n) => new XMLSerializer().serializeToString(n),
+  // PNG through UPNG: a canvas keeps colors multiplied by alpha, which rounds the soft edges of
+  // line art and would make the way back inexact. JPEG has no alpha, so the canvas is exact.
+  decodeImage: async (bytes, ext) => {
+    if (ext === "png") {
+      const img = UPNG.decode(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      return { rgba: new Uint8Array(UPNG.toRGBA8(img)[0]), width: img.width, height: img.height };
+    }
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const g = canvas.getContext("2d");
+    g.drawImage(bitmap, 0, 0);
+    return { rgba: new Uint8Array(g.getImageData(0, 0, canvas.width, canvas.height).data.buffer), width: canvas.width, height: canvas.height };
+  },
+  encodePng: (rgba, w, h) => new Uint8Array(UPNG.encode([rgba.buffer.slice(rgba.byteOffset, rgba.byteOffset + rgba.byteLength)], w, h, 0)),
+};
+
+async function toggleDarkOnSelectedSlides() {
+  requireSlideExport();
+  const exported = await PowerPoint.run(async (ctx) => {
+    const selected = ctx.presentation.getSelectedSlides();
+    selected.load("items/id");
+    await ctx.sync();
+    const pptx = selected.items.map((s) => s.exportAsBase64());
+    const tags = selected.items.map((s) => s.tags.getItemOrNullObject(DARK_TAG));
+    tags.forEach((t) => t.load("value"));
+    await ctx.sync();
+    return selected.items.map((s, i) => ({ id: s.id, pptx: pptx[i].value, tag: tags[i].isNullObject ? null : JSON.parse(tags[i].value) }));
+  });
+  if (!exported.length) throw new Error("Select a slide first.");
+  const ids = [], skipped = [];
+  let dark = 0, light = 0, pictures = 0;
+  for (const [i, { id, pptx, tag }] of exported.entries()) {
+    if (exported.length > 1) status(`Slide ${i + 1} of ${exported.length}…`);
+    const zip = await JSZip.loadAsync(pptx, { base64: true });
+    const paths = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
+    if (paths.length !== 1) throw new Error(`The exported slide came back as ${paths.length} slides.`);
+    const result = await Dark.invertSlideInPackage(zip, paths[0], tag, darkIo);
+    if (result.skipped) { ids.push(id); skipped.push(result.skipped); continue; }
+    const newId = await replaceSlide(id, await zip.generateAsync({ type: "base64", compression: "DEFLATE" }));
+    await PowerPoint.run(async (ctx) => {
+      const tags = ctx.presentation.slides.getItem(newId).tags;
+      if (result.tag) tags.add(DARK_TAG, JSON.stringify(result.tag)); else tags.delete(DARK_TAG);
+      await ctx.sync();
+    });
+    ids.push(newId);
+    if (result.toDark) dark++; else light++;
+    pictures += result.pictures;
+  }
+  await selectSlides(ids);
+  const done = [dark && `${dark} to dark`, light && `${light} to light`].filter(Boolean).join(", ");
+  const pics = pictures ? `, ${pictures} picture(s) flipped` : "";
+  const left = skipped.length ? ` ${skipped.length} left alone: ${skipped[0]}.` : "";
+  status(done ? `Turned ${done}${pics}.${left}` : `Nothing turned.${left}`, !done);
+}
+
 // Disables the clicked button while `fn` runs: a second click would replace the same picture twice.
 function guarded(fn) {
   return async (event) => {
@@ -415,6 +479,7 @@ Office.onReady(() => {
   $("crop-border").onclick = guarded(cropBorderOfSelectedImage);
   $("add-to-group").onclick = guarded(addToAnimatedGroup);
   $("underline-links").onclick = guarded(underlineLinksOnSelectedSlides);
+  $("dark").onclick = guarded(toggleDarkOnSelectedSlides);
   if (!Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
     status("This PowerPoint is too old for the add-in (needs PowerPointApi 1.5).", true);
   }

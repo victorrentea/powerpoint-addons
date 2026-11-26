@@ -10,6 +10,9 @@
   <script src="regroup.js"></script>
   <script src="links.js"></script>
   <script src="crop.js"></script>
+  <script src="vendor/pako.min.js"></script>
+  <script src="vendor/UPNG.js"></script>
+  <script src="dark.js"></script>
   <link rel="stylesheet" href="taskpane.css">
 </head>
 <body>
@@ -24,6 +27,11 @@
       <button id="remove-watermark" class="primary" title="Claude finds the watermark (stock-site text or logo, even partial fragments) and LaMa paints it out on this Mac's GPU; a second look catches what the first missed. ~20–40 s. The picture stays where it was.">Remove watermark</button>
       <button id="crop-border" class="primary" title="Cut off the useless border: the flat band of transparent, white, black or any one color around the picture, each side on its own. What's left stays exactly where it was on the slide.">Crop border</button>
     </div>
+  </section>
+
+  <section>
+    <h2>Selected slides</h2>
+    <button id="dark" class="primary" title="Turn the selected slides dark, or dark ones light: the background flips, text keeps the contrast it had against what is behind it, pastel fills and highlights become deep tints (yellow turns amber), line art and light screenshots are flipped, photos stay. Click again to get the slide back exactly as it was. Each slide is rebuilt in place.">Dark ↔ light</button>
   </section>
 
   <section>
