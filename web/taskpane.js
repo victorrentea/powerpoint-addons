@@ -95,35 +95,6 @@ async function insertCode() {
   status(`Inserted ${lines.length} lines, ${runs.length} colored runs.`);
 }
 
-const TEXT_SHAPES = new Set(["TextBox", "GeometricShape", "Placeholder"]);
-
-async function scanDeck() {
-  const ranking = await PowerPoint.run(async (ctx) => {
-    const slides = ctx.presentation.slides;
-    slides.load("items/id");
-    await ctx.sync();
-    const shapesPerSlide = slides.items.map((s) => s.shapes.load("items/type"));
-    await ctx.sync();
-    const texts = shapesPerSlide.map((shapes) =>
-      shapes.items.filter((sh) => TEXT_SHAPES.has(sh.type)).map((sh) => sh.textFrame.textRange.load("text")));
-    await ctx.sync();
-    return texts.map((ranges, i) => {
-      const all = ranges.map((r) => r.text).join(" ").trim();
-      return { index: i + 1, words: all ? all.split(/\s+/).length : 0, title: all.split(/[\r\n]/)[0].slice(0, 50) };
-    }).sort((a, b) => b.words - a.words);
-  });
-  const list = $("ranking");
-  list.innerHTML = "";
-  for (const s of ranking.slice(0, 15)) {
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="n">${s.words} words</span> · slide ${s.index} <span class="t"></span>`;
-    li.querySelector(".t").textContent = s.title;
-    li.onclick = () => Office.context.document.goToByIdAsync(s.index, Office.GoToType.Index);
-    list.appendChild(li);
-  }
-  status(`Scanned ${ranking.length} slides.`);
-}
-
 // Pixels per point when rendering the picture, so the negative keeps detail when the slide is projected.
 const RENDER_SCALE = 3;
 
@@ -311,13 +282,13 @@ async function exportSlideWithMarks() {
   });
 }
 
-// Runs `edit(doc)` on the slide XML inside an exported one-slide pptx; returns the rebuilt pptx.
+// Runs `edit(doc, {zip, path})` (may be async) on the slide XML inside an exported one-slide pptx; returns the rebuilt pptx.
 async function editSlideXml(pptx, edit) {
   const zip = await JSZip.loadAsync(pptx, { base64: true });
   const slides = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
   if (slides.length !== 1) throw new Error(`The exported slide came back as ${slides.length} slides.`);
   const doc = new DOMParser().parseFromString(await zip.file(slides[0]).async("string"), "application/xml");
-  const result = edit(doc);
+  const result = await edit(doc, { zip, path: slides[0] });
   const xml = new XMLSerializer().serializeToString(doc);
   zip.file(slides[0], xml.startsWith("<?xml") ? xml : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xml}`);
   return { result, rebuilt: await zip.generateAsync({ type: "base64", compression: "DEFLATE" }) };
@@ -367,7 +338,8 @@ async function addToAnimatedGroup() {
   status(`Added ${result.added.map((n) => `"${n}"`).join(", ")} to "${result.group}", which ${kept}.${dropped}`);
 }
 
-// 🔗 Every link on the selected slides: text keeps its color and font, the underline turns blue.
+// 🔗 Every link on the selected slides: text keeps its color and font, turns bold, the underline turns
+// blue — a lighter blue on a dark slide.
 async function underlineLinksOnSelectedSlides() {
   requireSlideExport();
   const exported = await PowerPoint.run(async (ctx) => {
@@ -380,17 +352,22 @@ async function underlineLinksOnSelectedSlides() {
   });
   if (!exported.length) throw new Error("Select a slide first.");
   const ids = [];
-  let links = 0, rebuiltSlides = 0;
+  let links = 0, rebuiltSlides = 0, darkSlides = 0;
   for (const { id, pptx } of exported) {
-    const { result, rebuilt } = await editSlideXml(pptx, Links.underlineLinks);
-    if (!result) { ids.push(id); continue; }
+    const { result, rebuilt } = await editSlideXml(pptx, async (doc, { zip, path }) => {
+      const dark = await Dark.isSlideDarkInPackage(zip, path, darkIo);
+      return { dark, changed: Links.underlineLinks(doc, { dark }) };
+    });
+    if (!result.changed) { ids.push(id); continue; }
     ids.push(await replaceSlide(id, rebuilt));
-    links += result;
+    links += result.changed;
     rebuiltSlides++;
+    if (result.dark) darkSlides++;
   }
   await selectSlides(ids);
   const where = exported.length === 1 ? "this slide" : `${exported.length} slides`;
-  status(links ? `Underlined ${links} link run(s) in blue on ${rebuiltSlides} of ${where}.` : `No links to restyle on ${where}.`);
+  const lighter = darkSlides ? ` (lighter blue on ${darkSlides} dark one(s))` : "";
+  status(links ? `Made ${links} link run(s) bold with a blue underline on ${rebuiltSlides} of ${where}${lighter}.` : `No links to restyle on ${where}.`);
 }
 
 // 🌗 Dark ↔ light on the selected slides. The engine is web/dark.js; what a slide needs to get back
@@ -472,7 +449,6 @@ Office.onReady(() => {
   // covers a pane opened in the 30 s before its watcher notices PowerPoint.
   prewarmBackgroundRemoval();
   $("insert").onclick = guarded(insertCode);
-  $("scan").onclick = guarded(scanDeck);
   $("invert").onclick = guarded(invertSelectedImage);
   $("remove-bg").onclick = guarded(removeBackground);
   $("remove-watermark").onclick = guarded(removeWatermarkFromSelectedImage);

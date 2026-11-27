@@ -308,6 +308,26 @@
     return found ? found.parentNode.parentNode.parentNode : null; // ph → nvPr → nvSpPr → sp
   }
 
+  // The background a slide shows: its own, else the layout's, else the master's.
+  function backgroundOf(slide, env) {
+    const owner = [slide, env.layout, env.master].find((d) => d && descendants(d, P, "bg")[0]);
+    const el = owner && descendants(owner, P, "bg")[0];
+    const colors = el ? descendants(el, "*", "*").filter((e) => e.namespaceURI === A && COLOR_TAGS.has(e.localName)) : [];
+    return { owner, el, colors, picture: !!(el && descendants(el, A, "blipFill").length) };
+  }
+
+  // True when the slide's page reads dark (white text reads better on it); false for a picture background.
+  function isSlideDark(slide, env) {
+    const theme = themeColors(env.theme);
+    const ovr = descendants(slide, P, "clrMapOvr")[0];
+    const override = ovr && child(ovr, A, "overrideClrMapping");
+    const map = override ? mapOf(override) : mapOf(descendants(env.master, P, "clrMap")[0]);
+    const bg = backgroundOf(slide, env);
+    if (bg.picture) return false;
+    const seen = bg.colors.map((el) => resolve(el, { theme, map }, map)).filter(Boolean).map((c) => c.rgb);
+    return isDark(seen.length ? average(seen) : theme[map.bg1]);
+  }
+
   // ---------- the slide ----------
   // env: { layout, master, theme (docs), tag (what the last toggle stored, or null),
   //        images: Map blip rId → imageStats(...) raw result plus {width,height} — or absent,
@@ -334,11 +354,8 @@
     const R_old = { theme, map: mapOld }, R_new = { theme, map: mapNew };
     const was = (el) => resolve(el, R_old, mapOld), willBe = (el) => resolve(el, R_new, mapNew);
 
-    // The background: the slide's, else the layout's, else the master's.
-    const bgOwner = [slide, env.layout, env.master].find((d) => d && descendants(d, P, "bg")[0]);
-    const bgEl = bgOwner && descendants(bgOwner, P, "bg")[0];
-    if (bgEl && descendants(bgEl, A, "blipFill").length) return { skipped: "its background is a picture" };
-    const bgColors = bgEl ? descendants(bgEl, "*", "*").filter((e) => e.namespaceURI === A && COLOR_TAGS.has(e.localName)) : [];
+    const { owner: bgOwner, el: bgEl, colors: bgColors, picture: bgPicture } = backgroundOf(slide, env);
+    if (bgPicture) return { skipped: "its background is a picture" };
     const bgWas = bgColors.map(was).filter(Boolean).map((c) => c.rgb);
     const pageOld = bgWas.length ? average(bgWas) : theme[mapOld.bg1];
     const toDark = !isDark(pageOld);
@@ -676,7 +693,8 @@
   }
   // Toggles the slide at `slidePath` of a JSZip package, pictures included.
   // io: { parse, serialize, decodeImage(bytes, ext) → {rgba,width,height} | null, encodePng(rgba, w, h) → bytes }
-  async function invertSlideInPackage(zip, slidePath, tag, io) {
+  // The layout, master and theme a slide of a JSZip package lives in.
+  async function slideEnv(zip, slidePath, io) {
     const read = async (p) => io.parse(await zip.file(p).async("string"));
     const related = async (part, type) => {
       const rels = await read(relsOf(part));
@@ -684,6 +702,15 @@
       return resolveTarget(part, rel.getAttribute("Target"));
     };
     const layoutPath = await related(slidePath, "slideLayout"), masterPath = await related(layoutPath, "slideMaster");
+    return { layout: await read(layoutPath), master: await read(masterPath), theme: await read(await related(masterPath, "theme")) };
+  }
+
+  async function isSlideDarkInPackage(zip, slidePath, io) {
+    return isSlideDark(io.parse(await zip.file(slidePath).async("string")), await slideEnv(zip, slidePath, io));
+  }
+
+  async function invertSlideInPackage(zip, slidePath, tag, io) {
+    const read = async (p) => io.parse(await zip.file(p).async("string"));
     const slide = await read(slidePath), rels = await read(relsOf(slidePath));
     const relById = new Map(elements(rels.documentElement).map((r) => [r.getAttribute("Id"), r]));
 
@@ -698,8 +725,7 @@
       if (decoded.get(file)) images.set(rId, { ...decoded.get(file), file });
     }
 
-    const result = invertSlide(slide, { layout: await read(layoutPath), master: await read(masterPath),
-      theme: await read(await related(masterPath, "theme")), tag, images, parse: io.parse, serialize: io.serialize });
+    const result = invertSlide(slide, { ...(await slideEnv(zip, slidePath, io)), tag, images, parse: io.parse, serialize: io.serialize });
     if (result.skipped) return result;
 
     // The flipped pictures become new PNG parts; the originals are not touched.
@@ -739,7 +765,7 @@
     return result;
   }
 
-  const api = { invertSlide, invertSlideInPackage, marker, invertPixels, flipLightness, imageStats, shouldInvert, surface, ink, contrast, luminance, toOklch, fromOklch };
+  const api = { invertSlide, invertSlideInPackage, isSlideDark, isSlideDarkInPackage, marker, invertPixels, flipLightness, imageStats, shouldInvert, surface, ink, contrast, luminance, toOklch, fromOklch };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Dark = api;
 })(this);

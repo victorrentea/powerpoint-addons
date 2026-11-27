@@ -22,12 +22,9 @@ textarea { min-height: 140px; resize: vertical; font-family: "JetBrains Mono", M
 .row label, .row button { flex: 1; }
 .row label { min-width: 0; }
 .primary { background: var(--accent); color: var(--accent-fg); border: none; border-radius: 4px;
-  padding: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+  padding: 8px; font: inherit; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px; }
+.icon { font-size: 16px; line-height: 1; flex: none; }
 .primary:disabled { opacity: .5; }
-#ranking { margin: 0; padding-left: 22px; }
-#ranking li { padding: 4px 0; cursor: pointer; }
-#ranking li:hover { color: var(--accent); }
-#ranking .n { font-weight: 600; }
-#ranking .t { color: var(--muted); }
 #status { color: var(--muted); min-height: 1em; }
 #status.error { color: #d13438; }

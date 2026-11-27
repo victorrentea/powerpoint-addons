@@ -2,7 +2,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { DOMParser, XMLSerializer } = require("@xmldom/xmldom");
-const { underlineLinks } = require("../web/links.js");
+const { underlineLinks, LIGHT_BLUE } = require("../web/links.js");
 
 const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
   + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
@@ -10,16 +10,16 @@ const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
 // What PowerPoint writes after Font › Underline color on a link, copied from a hand-made slide.
 const HLINK_TX = '<a:extLst><a:ext uri="{A12FA001-AC4F-418D-AE19-62706E023703}">'
   + '<ahyp:hlinkClr xmlns:ahyp="http://schemas.microsoft.com/office/drawing/2018/hyperlinkcolor" val="tx"/></a:ext></a:extLst>';
-const DONE = '<a:rPr lang="en-US" sz="2400" u="sng" noProof="1"><a:uLnTx/>'
+const DONE = '<a:rPr lang="en-US" sz="2400" u="sng" noProof="1" b="1"><a:uLnTx/>'
   + '<a:uFill><a:solidFill><a:schemeClr val="tx2"/></a:solidFill></a:uFill>'
   + `<a:hlinkClick r:id="rId4">${HLINK_TX}</a:hlinkClick></a:rPr>`;
 
 const run = (rPr) => `<a:r>${rPr}<a:t>link</a:t></a:r>`;
 const body = (...runs) => `<p:txBody xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ${NS}><a:p>${runs.join("")}</a:p></p:txBody>`;
 
-function apply(xml) {
+function apply(xml, opts) {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
-  const changed = underlineLinks(doc);
+  const changed = underlineLinks(doc, opts);
   return { changed, xml: new XMLSerializer().serializeToString(doc) };
 }
 
@@ -66,4 +66,27 @@ test("runs without a link are untouched", () => {
   const { changed, xml } = apply(body(run(plain)));
   assert.equal(changed, 0);
   assert.equal(firstRPr(xml), plain);
+});
+
+test("on a dark slide the underline takes the lighter blue, text stays bold", () => {
+  const { changed, xml } = apply(body(run('<a:rPr lang="en-US"><a:hlinkClick r:id="rId4"/></a:rPr>')), { dark: true });
+  assert.equal(changed, 1);
+  assert.match(firstRPr(xml), new RegExp(`<a:uFill><a:solidFill><a:srgbClr val="${LIGHT_BLUE}"/></a:solidFill></a:uFill>`));
+  assert.match(firstRPr(xml), /b="1"/);
+  assert.doesNotMatch(firstRPr(xml), /schemeClr/);
+});
+
+test("a link done for a light slide is redone on a dark one, and back", () => {
+  const dark = apply(body(run(DONE)), { dark: true });
+  assert.equal(dark.changed, 1);
+  assert.equal((dark.xml.match(/<a:uFill>/g) || []).length, 1);
+  const light = apply(dark.xml);
+  assert.equal(light.changed, 1);
+  assert.match(light.xml, /<a:schemeClr val="tx2"\/>/);
+});
+
+test("a link underlined in blue but not bold gets bold", () => {
+  const { changed, xml } = apply(body(run(DONE.replace(' b="1"', ""))));
+  assert.equal(changed, 1);
+  assert.match(firstRPr(xml), /b="1"/);
 });

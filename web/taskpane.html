@@ -16,36 +16,34 @@
   <link rel="stylesheet" href="taskpane.css">
 </head>
 <body>
-  <!-- One pane, no tabs: every button in sight, nothing to hunt for. -->
+  <!-- One pane, no tabs: every button in sight, nothing to hunt for. Grouped by what they act on. -->
   <section>
     <h2>Selected picture</h2>
     <div class="row">
-      <button id="invert" class="primary" title="Replace the selected picture with its negative: black ↔ white, every color flipped, transparency kept.">Invert</button>
-      <button id="remove-bg" class="primary" title="Cut the background away (BiRefNet, on this Mac's GPU). The result is trimmed to the subject and stays where the subject was.">Remove background</button>
+      <button id="invert" class="primary" title="Replace the selected picture with its negative: black ↔ white, every color flipped, transparency kept."><span class="icon">🎞️</span>Invert</button>
+      <button id="remove-bg" class="primary" title="Cut the background away (BiRefNet, on this Mac's GPU). The result is trimmed to the subject and stays where the subject was."><span class="icon">✂️</span>Remove background</button>
     </div>
     <div class="row">
-      <button id="remove-watermark" class="primary" title="Claude finds the watermark (stock-site text or logo, even partial fragments) and LaMa paints it out on this Mac's GPU; a second look catches what the first missed. ~20–40 s. The picture stays where it was.">Remove watermark</button>
-      <button id="crop-border" class="primary" title="Cut off the useless border: the flat band of transparent, white, black or any one color around the picture, each side on its own. What's left stays exactly where it was on the slide.">Crop border</button>
+      <button id="remove-watermark" class="primary" title="Claude finds the watermark (stock-site text or logo, even partial fragments) and LaMa paints it out on this Mac's GPU; a second look catches what the first missed. ~20–40 s. The picture stays where it was."><span class="icon">🧽</span>Remove watermark</button>
+      <button id="crop-border" class="primary" title="Cut off the useless border: the flat band of transparent, white, black or any one color around the picture, each side on its own. What's left stays exactly where it was on the slide."><span class="icon">🖼️</span>Crop border</button>
     </div>
   </section>
 
   <section>
     <h2>Selected slides</h2>
-    <button id="dark" class="primary" title="Turn the selected slides dark, or dark ones light: the background flips, text keeps the contrast it had against what is behind it, pastel fills and highlights become deep tints (yellow turns amber), line art and light screenshots are flipped, photos stay. Click again to get the slide back exactly as it was. Each slide is rebuilt in place.">Dark ↔ light</button>
+    <div class="row">
+      <button id="dark" class="primary" title="Turn the selected slides dark, or dark ones light: the background flips, text keeps the contrast it had against what is behind it, pastel fills and highlights become deep tints (yellow turns amber), line art and light screenshots are flipped, photos stay. Click again to get the slide back exactly as it was. Each slide is rebuilt in place."><span class="icon">🌗</span>Dark ↔ light</button>
+      <button id="underline-links" class="primary" title="Every hyperlink on the selected slides turns bold and gets a blue underline (theme color Text 2; a lighter blue on a dark slide), keeping its own text color and font. Select several slides in the thumbnails to do them all. Each changed slide is rebuilt in place."><span class="icon">🔗</span>Bold blue links</button>
+    </div>
   </section>
 
   <section>
-    <h2>Animated group</h2>
-    <button id="add-to-group" class="primary" title="Select an animated group plus the shapes to add to it. They join the group, which keeps its animation and its place in the order. The slide is rebuilt in place.">Add selection to animated group</button>
+    <h2>Selected shapes</h2>
+    <button id="add-to-group" class="primary" title="Select an animated group plus the shapes to add to it. They join the group, which keeps its animation and its place in the order. The slide is rebuilt in place."><span class="icon">🧩</span>Add selection to animated group</button>
   </section>
 
   <section>
-    <h2>Links</h2>
-    <button id="underline-links" class="primary" title="On the selected slides, every hyperlink keeps its own text color and font; only its underline turns blue (theme color Text 2). Select several slides in the thumbnails to do them all. Each changed slide is rebuilt in place.">Blue underline on links</button>
-  </section>
-
-  <section>
-    <h2>Code block</h2>
+    <h2>Current slide</h2>
     <textarea id="src" spellcheck="false" placeholder="Paste code here…"></textarea>
     <div class="row">
       <label>Language
@@ -71,13 +69,7 @@
         </select>
       </label>
     </div>
-    <button id="insert" class="primary">Insert on current slide</button>
-  </section>
-
-  <section>
-    <h2>Text-heavy slides</h2>
-    <button id="scan" class="primary" title="Rank the slides by word count. Click one to jump to it.">Scan deck</button>
-    <ol id="ranking"></ol>
+    <button id="insert" class="primary" title="Insert the code above on the current slide as a syntax-highlighted JetBrains Mono text box (VS Code Dark+ / Light+ colors)."><span class="icon">💻</span>Insert code block</button>
   </section>
 
   <p id="status"></p>
